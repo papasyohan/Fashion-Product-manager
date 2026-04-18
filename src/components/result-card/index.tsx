@@ -6,11 +6,13 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { ShareSheet } from '@/components/share-sheet'
 import type { GenerationResult } from '@/store/studio'
 
 interface ResultCardProps {
   result: GenerationResult
   mode: 'quick' | 'studio'
+  projectId?: string | null
   onSelectName: (index: number) => void
   onRegenerate?: () => void
   onSave?: () => void
@@ -19,11 +21,15 @@ interface ResultCardProps {
 export function ResultCard({
   result,
   mode,
+  projectId,
   onSelectName,
   onRegenerate,
   onSave,
 }: ResultCardProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
+
+  const selectedName = result.names[result.selectedNameIndex]?.name ?? ''
 
   const copyToClipboard = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text)
@@ -125,19 +131,37 @@ export function ResultCard({
         <section className="mb-8">
           <SectionHeader number="04" title="공유하기" color="violet" />
           <div className="grid grid-cols-3 gap-3">
-            <ShareButton icon={<MessageSquare className="w-5 h-5" />} label="SMS" />
+            <ShareButton
+              icon={<MessageSquare className="w-5 h-5" />}
+              label="SMS"
+              onClick={() => setShareOpen(true)}
+            />
             <ShareButton
               icon={
-                <div className="w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center text-xs font-bold text-stone-900">
-                  K
-                </div>
+                <div className="w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center text-xs font-bold text-stone-900">K</div>
               }
               label="카카오톡"
               className="border-yellow-300 bg-yellow-50 hover:border-yellow-500"
+              onClick={() => setShareOpen(true)}
             />
-            <ShareButton icon={<Share2 className="w-5 h-5" />} label="링크 복사" />
+            <ShareButton
+              icon={<Share2 className="w-5 h-5" />}
+              label="링크 복사"
+              onClick={() => setShareOpen(true)}
+            />
           </div>
         </section>
+      )}
+
+      {/* ShareSheet 모달 */}
+      {shareOpen && projectId && (
+        <ShareSheet
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          projectId={projectId}
+          productName={selectedName}
+          tagline={result.tagline}
+        />
       )}
 
       {/* SynthID 고지 */}
@@ -205,13 +229,16 @@ function ShareButton({
   icon,
   label,
   className = '',
+  onClick,
 }: {
   icon: React.ReactNode
   label: string
   className?: string
+  onClick?: () => void
 }) {
   return (
     <button
+      onClick={onClick}
       className={`rounded-2xl border border-stone-200 bg-white p-5 hover:border-stone-900 transition-colors flex flex-col items-center gap-2 font-sans ${className}`}
     >
       {icon}

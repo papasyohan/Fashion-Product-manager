@@ -40,10 +40,20 @@ export async function proxy(request: NextRequest) {
   const isApiRoute = pathname.startsWith('/api')
   const isPublicPage =
     pathname === '/' ||
-    pathname.startsWith('/studio') ||
+    pathname === '/terms' ||
+    pathname === '/privacy' ||
+    pathname.startsWith('/share/') ||
     isAuthPage ||
     isApiRoute
 
+  // 인증된 사용자가 루트(랜딩) 접근 시 → 스튜디오로 리다이렉트
+  if (user && pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/studio'
+    return NextResponse.redirect(url)
+  }
+
+  // 비인증 사용자가 보호된 페이지 접근 시 → 로그인으로 리다이렉트
   if (!user && !isPublicPage) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
