@@ -1,0 +1,46 @@
+{
+  "sprint": 0,
+  "completedAt": "2026-04-18T08:45:00.000Z",
+  "steps": {
+    "scaffolding": "done",
+    "agents": "done",
+    "directoryStructure": "done",
+    "envFile": "done",
+    "vitestConfig": "done",
+    "supabaseMigration": "done",
+    "aiTypes": "done",
+    "uiPort": "done",
+    "testRed": "done"
+  },
+  "build": {
+    "status": "pass",
+    "routes": ["/", "/studio"],
+    "typescript": "pass"
+  },
+  "failingTests": [
+    "tests/unit/image-analyzer.test.ts — @/lib/ai/analyzers/image-analyzer 미구현",
+    "tests/unit/naming-agent.test.ts — @/lib/ai/generators/naming-agent 미구현",
+    "tests/unit/tagline-agent.test.ts — @/lib/ai/generators/tagline-agent 미구현",
+    "tests/unit/description-agent.test.ts — @/lib/ai/generators/description-agent 미구현",
+    "tests/unit/thumbnail-gen.test.ts — @/lib/ai/image/nano-banana2-provider 미구현",
+    "tests/unit/trend-fetcher.test.ts — @/lib/trends/trend-fetcher 미구현",
+    "tests/unit/credit-guard.test.ts — @/lib/credit-guard 미구현",
+    "tests/e2e/quick-mode.spec.ts — Sprint 1 구현 필요",
+    "tests/e2e/studio-mode.spec.ts — Sprint 2 구현 필요"
+  ],
+  "nextStep": "Sprint 1 — G1 인증 + G2 업로드 + G3 AI 콘텐츠 생성 (간편 모드 MVP)",
+  "userActionRequired": [
+    ".env.local에 API 키 입력 (ANTHROPIC_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)",
+    "Supabase 프로젝트 생성 후 URL/키 설정",
+    "Supabase CLI로 마이그레이션 적용: pnpm dlx supabase db push",
+    "Google AI Studio에서 Gemini API 키 발급 (gemini-3.1-flash-image-preview 활성화 확인)",
+    "Toss Payments 계정 생성 및 클라이언트/시크릿 키 발급",
+    "CoolSMS 계정 생성 및 API 키 발급",
+    "Kakao Developers에서 JavaScript SDK 키 발급"
+  ],
+  "notes": {
+    "shadcnToast": "toast 컴포넌트 deprecated → sonner로 대체 설치됨",
+    "testRed": "9개 테스트 파일 모두 미구현 모듈 참조로 실패 (TDD Red 정상)",
+    "buildStatus": "pnpm build 성공 — /studio 라우트 정상 렌더링"
+  }
+}
