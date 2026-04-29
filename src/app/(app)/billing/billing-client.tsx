@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { Check, Zap, Sparkles, Building2, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -97,22 +98,83 @@ interface UsageEvent {
 }
 
 interface Props {
+  userId: string
   currentPlan: string
   creditsLeft: number
   email: string
   usageEvents: UsageEvent[]
 }
 
-export function BillingClient({ currentPlan, creditsLeft, email, usageEvents }: Props) {
+export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEvents }: Props) {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const [banner, setBanner] = useState<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  // ─── Toss 결제 리다이렉트 결과 배너 표시 ────────────────────────────────
+  useEffect(() => {
+    const status = searchParams.get('status')
+    if (!status) return
+    if (status === 'success') {
+      setBanner({
+        kind: 'success',
+        text: '결제 요청이 접수되었습니다. 웹훅 확인 후 플랜이 자동 업그레이드됩니다.',
+      })
+    } else if (status === 'fail') {
+      const code = searchParams.get('code')
+      const message = searchParams.get('message')
+      setBanner({
+        kind: 'error',
+        text: `결제 실패 — ${message ?? code ?? '알 수 없는 오류'}`,
+      })
+    }
+    // URL 파라미터 정리
+    router.replace('/billing')
+    const t = setTimeout(() => setBanner(null), 7000)
+    return () => clearTimeout(t)
+  }, [searchParams, router])
 
   const handleUpgrade = async (planId: string) => {
     if (planId === 'free' || planId === currentPlan) return
+
+    const plan = PLANS.find((p) => p.id === planId)
+    if (!plan || plan.price === 0) return
+
+    const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY
+    if (!clientKey) {
+      setBanner({
+        kind: 'error',
+        text: 'Toss 클라이언트 키가 설정되지 않아 결제를 진행할 수 없습니다. 관리자에게 문의해주세요.',
+      })
+      return
+    }
+    if (typeof window === 'undefined' || !window.TossPayments) {
+      setBanner({ kind: 'error', text: 'Toss SDK가 아직 로드되지 않았습니다. 잠시 후 다시 시도해주세요.' })
+      return
+    }
+
     setLoadingPlan(planId)
-    // TODO: Toss Payments 연동 — Sprint 3
-    await new Promise((r) => setTimeout(r, 800))
-    alert(`${planId} 플랜 결제 페이지는 Toss Payments 연동 후 활성화됩니다.`)
-    setLoadingPlan(null)
+    try {
+      // orderId 포맷: plan-{planId}-{userId}-{timestamp} → 웹훅에서 파싱
+      const orderId = `plan-${planId}-${userId}-${Date.now()}`
+      const origin = window.location.origin
+      const tossPayments = window.TossPayments(clientKey)
+      await tossPayments.requestPayment('카드', {
+        amount: plan.price,
+        orderId,
+        orderName: `ProductCraft AI ${plan.name} 플랜 (월 구독)`,
+        customerName: email.split('@')[0] || '구독자',
+        customerEmail: email,
+        successUrl: `${origin}/billing?status=success`,
+        failUrl: `${origin}/billing?status=fail`,
+      })
+      // requestPayment가 리다이렉트 처리하므로 아래는 도달하지 않음
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '결제 요청 실패'
+      setBanner({ kind: 'error', text: message })
+    } finally {
+      setLoadingPlan(null)
+    }
   }
 
   const formatDate = (iso: string) =>
@@ -131,6 +193,21 @@ export function BillingClient({ currentPlan, creditsLeft, email, usageEvents }: 
       className="max-w-5xl mx-auto px-6 py-10"
       style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}
     >
+      {/* 결제 결과 배너 */}
+      {banner && (
+        <div
+          className={`mb-6 rounded-2xl px-5 py-4 text-sm font-sans border ${
+            banner.kind === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : banner.kind === 'error'
+              ? 'bg-red-50 border-red-200 text-red-800'
+              : 'bg-stone-50 border-stone-200 text-stone-700'
+          }`}
+        >
+          {banner.text}
+        </div>
+      )}
+
       {/* 헤더 */}
       <div className="mb-10">
         <h1 className="text-4xl tracking-tight mb-2">

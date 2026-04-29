@@ -57,7 +57,53 @@ const KOREAN_SHOPPING_MOOD_MAP: Record<string, string> = {
 
 const GLOBAL_NEGATIVE_PROMPT =
   'deformed, blurry, low quality, watermark, text artifacts, misshapen product, ' +
-  'duplicate objects, extra limbs, cropped product, overexposed, underexposed'
+  'duplicate objects, extra limbs, cropped product, overexposed, underexposed, ' +
+  'garbled Korean characters, English translation of Korean badge text, misspelled hangul'
+
+// ─── 한글 배지 렌더링 옵션 ──────────────────────────────────────────────────
+
+export type BadgePosition =
+  | 'top-right'
+  | 'top-left'
+  | 'top-center'
+  | 'bottom-right'
+  | 'bottom-left'
+  | 'bottom-center'
+
+export interface BadgeOptions {
+  /** 배지 위치 (기본: top-right) */
+  position?: BadgePosition
+  /** 배지 배경 색상 설명 (기본: vivid red) — 예: 'vivid red', 'deep black', 'pastel pink' */
+  color?: string
+  /** 배지 모양 (기본: rounded rectangle) */
+  shape?: 'rounded rectangle' | 'circle' | 'pill' | 'ribbon'
+}
+
+/**
+ * 한글 배지 텍스트를 Nano Banana 2가 정확히 렌더링하도록 스타일링 지시 포함 프롬프트로 변환.
+ *
+ * 단순 텍스트 전달 시 모델이 영문화하거나 깨진 한글을 그리는 문제를 방지하기 위해,
+ * 위치·색상·폰트·모양을 명시적으로 지시합니다.
+ *
+ * @example
+ *   buildTextOverlay('신상 20%') →
+ *     render the exact Korean text "신상 20%" as a prominent badge, positioned at the top-right corner, ...
+ */
+export function buildTextOverlay(text: string, options?: BadgeOptions): string {
+  const position = options?.position ?? 'top-right'
+  const color = options?.color ?? 'vivid red'
+  const shape = options?.shape ?? 'rounded rectangle'
+
+  return [
+    `render the exact Korean text "${text}" as a prominent promotional badge`,
+    `positioned at the ${position} corner of the composition`,
+    `${shape} badge shape with ${color} fill and white bold Korean typography`,
+    `use Pretendard Bold or equivalent heavy sans-serif hangul font`,
+    `high contrast and fully readable at thumbnail size`,
+    `preserve the Korean characters exactly as written — do not translate, romanize, or alter them in any way`,
+    `keep badge size proportionate (≈10-15% of image area) and do not obscure the product`,
+  ].join(', ')
+}
 
 // ─── buildImagePrompt ────────────────────────────────────────────────────────
 
@@ -108,8 +154,10 @@ export interface BuildLayersInput {
   aspectRatio?: AspectRatio
   /** 커스텀 배경 설명 (없으면 자동 생성) */
   customScene?: string
-  /** 한글 배지 텍스트 */
+  /** 한글 배지 텍스트 (예: '신상', '20% 할인', '무료배송') */
   overlayText?: string
+  /** 한글 배지 스타일링 옵션 (위치·색·모양) — 생략 시 top-right / vivid red / rounded rectangle */
+  overlayBadge?: BadgeOptions
 }
 
 /**
@@ -143,8 +191,11 @@ export function buildPromptLayers(input: BuildLayersInput): PromptLayers {
   // [4] Composition — 종횡비별 구도
   const composition = ASPECT_RATIO_COMPOSITION[ratio]
 
-  // [5] TextOverlay
-  const textOverlay = input.overlayText
+  // [5] TextOverlay — 한글 배지가 있으면 모델이 정확히 렌더링하도록 구체 지시로 변환
+  //     단순 문자열이 전달되면 buildTextOverlay()로 스타일링(위치/색/폰트/모양) 주입
+  const textOverlay = input.overlayText?.trim()
+    ? buildTextOverlay(input.overlayText.trim(), input.overlayBadge)
+    : undefined
 
   return { subjectAnchor, scene, moodStyle, composition, textOverlay }
 }

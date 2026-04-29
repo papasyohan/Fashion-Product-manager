@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Copy, Share2, MessageSquare } from 'lucide-react'
+import { Check, Copy, Share2, MessageSquare, FileCode2, Download, Loader2, ExternalLink } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +28,9 @@ export function ResultCard({
 }: ResultCardProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
+  const [detailPageHtml, setDetailPageHtml] = useState<string | null>(null)
+  const [generatingDetail, setGeneratingDetail] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
 
   const selectedName = result.names[result.selectedNameIndex]?.name ?? ''
 
@@ -35,6 +38,67 @@ export function ResultCard({
     await navigator.clipboard.writeText(text)
     setCopiedField(field)
     setTimeout(() => setCopiedField(null), 2000)
+  }
+
+  // ─── 상세페이지 HTML 생성 (G5) ──────────────────────────────────────────
+  const handleGenerateDetailPage = async () => {
+    if (!projectId) {
+      setDetailError('projectId가 없습니다.')
+      return
+    }
+    setGeneratingDetail(true)
+    setDetailError(null)
+    try {
+      const res = await fetch('/api/generate/detail-page', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          productName: selectedName,
+          tagline: result.tagline,
+          description: result.description,
+          category: result.category ?? '상품',
+          keywords: result.keywords ?? [],
+          features: result.features ?? [],
+          thumbnailUrl: result.primaryThumbnailUrl,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error ?? '상세페이지 생성 실패')
+      }
+      const { html } = await res.json()
+      setDetailPageHtml(html)
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : '상세페이지 생성 실패')
+    } finally {
+      setGeneratingDetail(false)
+    }
+  }
+
+  // 상세페이지 HTML 다운로드
+  const handleDownloadDetailPage = () => {
+    if (!detailPageHtml) return
+    const blob = new Blob([detailPageHtml], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const slug = selectedName.replace(/[^\w가-힣0-9]+/g, '-').replace(/^-|-$/g, '') || 'detail-page'
+    a.href = url
+    a.download = `${slug}.html`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  // 새 창 미리보기
+  const handlePreviewDetailPage = () => {
+    if (!detailPageHtml) return
+    const win = window.open('', '_blank', 'noopener,noreferrer')
+    if (!win) return
+    win.document.open()
+    win.document.write(detailPageHtml)
+    win.document.close()
   }
 
   return (
@@ -126,10 +190,71 @@ export function ResultCard({
         </Card>
       </section>
 
+      {/* 스튜디오 모드 전용: 상세페이지 HTML */}
+      {mode === 'studio' && (
+        <section className="mb-8">
+          <SectionHeader number="04" title="상세페이지 HTML" subtitle="Pro+ 내보내기" color="violet" />
+          {!detailPageHtml ? (
+            <Card className="rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50/50 p-8 text-center">
+              <div className="w-12 h-12 mx-auto rounded-2xl bg-violet-600 flex items-center justify-center mb-4">
+                <FileCode2 className="w-6 h-6 text-white" />
+              </div>
+              <p className="text-lg mb-1">상품 상세페이지 자동 조립</p>
+              <p className="text-sm font-sans text-stone-500 mb-5">
+                Hero · 핵심 특징 · 상품 소개 · 키워드 · 리뷰 플레이스홀더까지 한 번에
+              </p>
+              <Button
+                onClick={handleGenerateDetailPage}
+                disabled={generatingDetail}
+                className="rounded-full bg-violet-600 text-white font-sans text-sm font-semibold hover:bg-violet-700 px-6"
+              >
+                {generatingDetail ? (
+                  <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> 조립 중...</>
+                ) : (
+                  <><FileCode2 className="w-4 h-4 mr-1.5" /> 상세페이지 생성</>
+                )}
+              </Button>
+              {detailError && (
+                <p className="mt-3 text-xs font-sans text-red-600">{detailError}</p>
+              )}
+            </Card>
+          ) : (
+            <Card className="rounded-2xl border border-violet-200 bg-white overflow-hidden">
+              <iframe
+                title="상세페이지 미리보기"
+                srcDoc={detailPageHtml}
+                sandbox="allow-same-origin"
+                className="w-full h-[420px] bg-white border-b border-stone-100"
+              />
+              <div className="flex items-center justify-between p-4 bg-violet-50/40">
+                <span className="text-xs font-sans text-stone-500">
+                  상세페이지 HTML이 준비되었습니다 · {Math.round(detailPageHtml.length / 1024)}KB
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={handlePreviewDetailPage}
+                    className="rounded-full font-sans text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 mr-1" /> 새 창 열기
+                  </Button>
+                  <Button
+                    onClick={handleDownloadDetailPage}
+                    className="rounded-full bg-violet-600 text-white font-sans text-xs font-semibold hover:bg-violet-700"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1" /> HTML 다운로드
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+        </section>
+      )}
+
       {/* 스튜디오 모드 전용: 공유 */}
       {mode === 'studio' && (
         <section className="mb-8">
-          <SectionHeader number="04" title="공유하기" color="violet" />
+          <SectionHeader number="05" title="공유하기" color="violet" />
           <div className="grid grid-cols-3 gap-3">
             <ShareButton
               icon={<MessageSquare className="w-5 h-5" />}

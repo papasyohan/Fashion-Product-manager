@@ -4,35 +4,49 @@ import { NextResponse, type NextRequest } from 'next/server'
 /**
  * Supabase Auth 세션 갱신 미들웨어
  * 모든 요청에서 쿠키 기반 세션을 유지
+ *
+ * 환경변수 누락 또는 Supabase 통신 실패 시 500을 던지는 대신,
+ * 비인증 상태로 통과시켜 페이지 레벨에서 명확한 에러를 표시할 수 있게 한다.
  */
 export async function proxy(request: NextRequest) {
+  const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supaAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  // 환경변수 미설정 시 그대로 통과 (강제 이동 시 500 방지)
+  if (!supaUrl || !supaAnon) {
+    console.error('[proxy] Supabase 환경변수 누락 — .env.local 확인 필요')
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
+  const supabase = createServerClient(supaUrl, supaAnon, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
       },
-    }
-  )
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) =>
+          request.cookies.set(name, value)
+        )
+        supabaseResponse = NextResponse.next({ request })
+        cookiesToSet.forEach(({ name, value, options }) =>
+          supabaseResponse.cookies.set(name, value, options)
+        )
+      },
+    },
+  })
 
-  // 세션 갱신 (토큰 만료 방지)
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // 세션 갱신 (토큰 만료 방지) — Supabase 통신 실패 시 비인증으로 폴백
+  let user: Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user'] = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } catch (err) {
+    console.error('[proxy] supabase.auth.getUser 실패:', err)
+    // 인증 검사 없이 통과 (보호 페이지로 이동 시 페이지 레벨에서 처리)
+    return supabaseResponse
+  }
 
   // 인증 필요 페이지 보호
   const { pathname } = request.nextUrl

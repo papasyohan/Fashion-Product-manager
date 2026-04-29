@@ -245,14 +245,4 @@ function ShareButton({
   )
 }
 
-// Kakao SDK 타입 확장
-declare global {
-  interface Window {
-    Kakao?: {
-      isInitialized: () => boolean
-      Share: {
-        sendDefault: (params: object) => void
-      }
-    }
-  }
-}
+// Kakao SDK 타입 확장은 src/components/kakao-sdk-loader에서 관리

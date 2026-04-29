@@ -28,6 +28,12 @@ export interface GenerationResult {
   description: string
   thumbnails?: ThumbnailResult[]
   selectedNameIndex: number
+  /** 상세페이지 조립용 부가 메타데이터 (analyze 단계 결과) */
+  category?: string
+  keywords?: string[]
+  features?: string[]
+  /** 썸네일 중 대표 이미지 URL — 상세페이지 Hero에 삽입 */
+  primaryThumbnailUrl?: string
 }
 
 export interface ThumbnailResult {

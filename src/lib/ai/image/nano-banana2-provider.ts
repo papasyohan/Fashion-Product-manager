@@ -69,8 +69,9 @@ export class NanaBanana2Provider implements IImageGenProvider {
       thinking = 'minimal',
     } = params
 
+    // Nano Banana 2 (Google 2026-02-26 출시) — 개발계획서 8-A.2절 명시 모델
     const model = this.genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-preview-image-generation',
+      model: 'gemini-3.1-flash-image-preview',
     })
 
     // 종횡비당 count만큼 생성 (병렬)

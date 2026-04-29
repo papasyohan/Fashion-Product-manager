@@ -39,37 +39,86 @@ export default function SignupPage() {
 
     setLoading(true)
 
-    const supabase = createClient()
-    const { error: signupError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: name },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
+    // 15초 타임아웃 (Supabase 응답이 끊긴 경우 무한 progress 방지)
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              '회원가입 요청이 응답하지 않습니다. 네트워크와 Supabase 연결 상태를 확인해주세요.'
+            )
+          ),
+        15000
+      )
+    )
 
-    if (signupError) {
-      if (signupError.message.includes('already registered')) {
-        setError('이미 가입된 이메일입니다. 로그인 페이지를 이용해주세요.')
-      } else {
-        setError('회원가입 중 오류가 발생했습니다. 다시 시도해주세요.')
+    try {
+      const supabase = createClient()
+      const result = await Promise.race([
+        supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: name },
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+          },
+        }),
+        timeout,
+      ])
+
+      const { data, error: signupError } = result
+
+      if (signupError) {
+        console.error('[signup] supabase error:', signupError)
+        if (signupError.message.includes('already registered')) {
+          setError('이미 가입된 이메일입니다. 로그인 페이지를 이용해주세요.')
+        } else if (signupError.message.includes('Email signups are disabled')) {
+          setError('Supabase 대시보드에서 이메일 회원가입이 비활성화되어 있습니다. (Authentication → Providers → Email)')
+        } else if (signupError.status === 0 || signupError.message.includes('fetch')) {
+          setError('Supabase 서버에 연결할 수 없습니다. NEXT_PUBLIC_SUPABASE_URL이 올바른지 확인해주세요.')
+        } else {
+          setError(`회원가입 실패: ${signupError.message}`)
+        }
+        return
       }
-      setLoading(false)
-      return
-    }
 
-    setSuccess(true)
-    setLoading(false)
+      // 이메일 확인 비활성화 시 즉시 세션 생성됨 → 스튜디오로
+      if (data.session) {
+        router.push('/studio')
+        router.refresh()
+        return
+      }
+
+      setSuccess(true)
+    } catch (err) {
+      console.error('[signup] unexpected:', err)
+      const message = err instanceof Error ? err.message : '알 수 없는 오류'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleGoogleSignup = async () => {
     setLoading(true)
-    const supabase = createClient()
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    })
+    setError(null)
+    try {
+      const supabase = createClient()
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      })
+      if (oauthError) {
+        console.error('[signup] google oauth error:', oauthError)
+        setError(`Google 로그인 실패: ${oauthError.message}`)
+        setLoading(false)
+      }
+      // 성공 시 Supabase가 자동으로 OAuth 페이지로 리다이렉트
+    } catch (err) {
+      console.error('[signup] google oauth unexpected:', err)
+      setError(err instanceof Error ? err.message : 'Google 로그인 실패')
+      setLoading(false)
+    }
   }
 
   if (success) {

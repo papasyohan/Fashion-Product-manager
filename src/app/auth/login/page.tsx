@@ -23,13 +23,21 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     setLoading(true)
     setError(null)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    })
-    if (error) {
-      setError('Google 로그인 중 오류가 발생했습니다.')
+    try {
+      const supabase = createClient()
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      })
+      if (oauthError) {
+        console.error('[login] google oauth error:', oauthError)
+        setError(`Google 로그인 실패: ${oauthError.message}`)
+        setLoading(false)
+      }
+      // 성공 시 Supabase가 OAuth 페이지로 자동 리다이렉트
+    } catch (err) {
+      console.error('[login] google oauth unexpected:', err)
+      setError(err instanceof Error ? err.message : 'Google 로그인 실패')
       setLoading(false)
     }
   }
@@ -40,17 +48,46 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    // 15초 타임아웃 (응답 hang 방지)
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error('로그인 요청이 응답하지 않습니다. Supabase 연결 상태를 확인해주세요.')
+          ),
+        15000
+      )
+    )
 
-    if (error) {
-      setError('이메일 또는 비밀번호가 올바르지 않습니다.')
+    try {
+      const supabase = createClient()
+      const { error: loginError } = await Promise.race([
+        supabase.auth.signInWithPassword({ email, password }),
+        timeout,
+      ])
+
+      if (loginError) {
+        console.error('[login] supabase error:', loginError)
+        if (loginError.message.includes('Invalid login credentials')) {
+          setError('이메일 또는 비밀번호가 올바르지 않습니다.')
+        } else if (loginError.message.includes('Email not confirmed')) {
+          setError('이메일 인증이 완료되지 않았습니다. 메일함을 확인해주세요.')
+        } else if (loginError.status === 0 || loginError.message.includes('fetch')) {
+          setError('Supabase 서버에 연결할 수 없습니다. NEXT_PUBLIC_SUPABASE_URL을 확인해주세요.')
+        } else {
+          setError(`로그인 실패: ${loginError.message}`)
+        }
+        setLoading(false)
+        return
+      }
+
+      router.push('/studio')
+      router.refresh()
+    } catch (err) {
+      console.error('[login] unexpected:', err)
+      setError(err instanceof Error ? err.message : '알 수 없는 오류')
       setLoading(false)
-      return
     }
-
-    router.push('/studio')
-    router.refresh()
   }
 
   return (

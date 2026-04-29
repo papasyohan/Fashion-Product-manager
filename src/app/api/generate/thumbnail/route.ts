@@ -40,7 +40,18 @@ const ThumbnailSchema = z.object({
     .default(['1:1', '4:5', '9:16', '16:9']),
   count: z.number().min(1).max(4).default(1),
   resolution: z.enum(['1K', '2K', '4K']).default('2K'),
+  /** 한글 배지 텍스트 (예: '신상', '20% 할인') */
   overlayText: z.string().max(20).optional(),
+  /** 한글 배지 스타일 옵션 (위치·색·모양) */
+  overlayBadge: z
+    .object({
+      position: z
+        .enum(['top-right', 'top-left', 'top-center', 'bottom-right', 'bottom-left', 'bottom-center'])
+        .optional(),
+      color: z.string().max(40).optional(),
+      shape: z.enum(['rounded rectangle', 'circle', 'pill', 'ribbon']).optional(),
+    })
+    .optional(),
 })
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
@@ -61,7 +72,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { projectId, imageUrl, imageBase64, analysis, aspectRatios, count, resolution, overlayText } = parsed.data
+    const { projectId, imageUrl, imageBase64, analysis, aspectRatios, count, resolution, overlayText, overlayBadge } = parsed.data
 
     // ─── 크레딧 가드 ──────────────────────────────────────────────────────
     const guard = await checkCreditGuard({
@@ -96,6 +107,7 @@ export async function POST(request: NextRequest) {
       keywords: analysis.keywords,
       aspectRatio: aspectRatios[0] as AspectRatio,
       overlayText,
+      overlayBadge,
     })
     const prompt = buildImagePrompt(layers)
 

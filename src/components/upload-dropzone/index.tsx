@@ -13,6 +13,10 @@ interface UploadDropzoneProps {
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_SIZE_MB = 20
+/** 전처리 타겟 최대 크기 (긴 변 기준, 개발계획서 G2) */
+const MAX_DIMENSION = 2048
+/** WebP 품질 — 품질/용량 균형점 (0~1) */
+const WEBP_QUALITY = 0.9
 
 export function UploadDropzone({
   onUploadComplete,
@@ -43,18 +47,22 @@ export function UploadDropzone({
       setFileName(file.name)
 
       try {
-        // 미리보기 생성
+        // 미리보기 생성 (원본)
         const previewUrl = URL.createObjectURL(file)
         setPreview(previewUrl)
-        setProgress(30)
+        setProgress(20)
 
-        // base64 변환
-        const base64 = await fileToBase64(file)
-        setProgress(60)
+        // 클라이언트 전처리: 긴 변 ≤ 2048px 리사이즈 + WebP 변환 (개발계획서 G2)
+        const processed = await preprocessImage(file)
+        setProgress(45)
 
-        // 서버 업로드 API 호출
+        // base64 변환 (전처리된 파일 기준)
+        const base64 = await fileToBase64(processed)
+        setProgress(65)
+
+        // 서버 업로드 API 호출 (원본 파일명 유지, 전처리 파일 전송)
         const formData = new FormData()
-        formData.append('file', file)
+        formData.append('file', processed, processed.name)
 
         const response = await fetch('/api/upload', {
           method: 'POST',
@@ -200,4 +208,80 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = reject
     reader.readAsDataURL(file)
   })
+}
+
+/**
+ * 업로드 전 클라이언트 측 전처리
+ *  - 긴 변이 MAX_DIMENSION(2048px)을 넘으면 비율 유지하며 축소
+ *  - PNG/JPEG → WebP 변환 (이미 WebP면 품질만 재인코딩)
+ *  - WebP 인코딩 실패/미지원 브라우저는 원본을 그대로 반환 (graceful degrade)
+ *
+ * 이유:
+ *  - 네트워크 절감 (최대 70% 용량 감소)
+ *  - Nano Banana 2 reference image는 고해상도 불필요 (≤2K면 충분)
+ */
+async function preprocessImage(file: File): Promise<File> {
+  try {
+    const bitmap = await createBitmap(file)
+    const { width: srcW, height: srcH } = bitmap
+
+    // 리사이즈 불필요 & 이미 WebP면 그대로 반환
+    const needsResize = Math.max(srcW, srcH) > MAX_DIMENSION
+    const needsConvert = file.type !== 'image/webp'
+    if (!needsResize && !needsConvert) {
+      bitmap.close?.()
+      return file
+    }
+
+    const scale = needsResize ? MAX_DIMENSION / Math.max(srcW, srcH) : 1
+    const targetW = Math.round(srcW * scale)
+    const targetH = Math.round(srcH * scale)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = targetW
+    canvas.height = targetH
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas 2D context 생성 실패')
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(bitmap, 0, 0, targetW, targetH)
+    bitmap.close?.()
+
+    const blob = await canvasToBlob(canvas, 'image/webp', WEBP_QUALITY)
+    if (!blob) throw new Error('WebP 변환 실패')
+
+    const base = file.name.replace(/\.(jpe?g|png|webp)$/i, '')
+    return new File([blob], `${base}.webp`, { type: 'image/webp', lastModified: Date.now() })
+  } catch (err) {
+    // 전처리 실패 시 원본으로 fallback — 업로드 자체는 막지 않는다
+    console.warn('[UploadDropzone] 전처리 실패, 원본 파일 업로드:', err)
+    return file
+  }
+}
+
+/** File → ImageBitmap (fallback: HTMLImageElement) */
+async function createBitmap(file: File): Promise<ImageBitmap & { close?: () => void }> {
+  if (typeof createImageBitmap === 'function') {
+    return (await createImageBitmap(file)) as ImageBitmap & { close?: () => void }
+  }
+  // 레거시 fallback — HTMLImageElement를 ImageBitmap 호환 객체로 감싼다
+  const img = new Image()
+  const url = URL.createObjectURL(file)
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve()
+    img.onerror = () => reject(new Error('이미지 디코딩 실패'))
+    img.src = url
+  })
+  URL.revokeObjectURL(url)
+  return Object.assign(img as unknown as ImageBitmap, {
+    close: () => { /* noop */ },
+  })
+}
+
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  type: string,
+  quality: number
+): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality))
 }

@@ -26,6 +26,7 @@ export default async function BillingPage() {
 
   return (
     <BillingClient
+      userId={user.id}
       currentPlan={(profile?.plan as string) ?? 'free'}
       creditsLeft={profile?.credits_left ?? 0}
       email={user.email ?? ''}
