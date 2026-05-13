@@ -43,6 +43,13 @@ export interface CreditGuardParams {
 export async function checkCreditGuard(
   params: CreditGuardParams
 ): Promise<CreditGuardResult> {
+  // ── 개발/테스트 우회 ──────────────────────────────────────────────────────
+  // .env.local 에 DEV_BYPASS_CREDITS=true 를 설정하면 크레딧/플랜 검사 전체 스킵
+  if (process.env.DEV_BYPASS_CREDITS === 'true') {
+    return { allowed: true, creditsRequired: 0, creditsAfter: 9999 }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   const { userId, operation, resolution = '2K', mockCreditsLeft, mockPlan } = params
 
   let creditsLeft: number
@@ -111,6 +118,9 @@ export async function deductCredits(params: {
   userId: string
   operation: Operation
 }): Promise<void> {
+  // 개발 우회 모드: 실제 차감 스킵
+  if (process.env.DEV_BYPASS_CREDITS === 'true') return
+
   const supabase = await createClient()
   const cost = CREDIT_COSTS[params.operation]
 
