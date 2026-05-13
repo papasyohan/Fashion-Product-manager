@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Package, History, CreditCard, LogOut, ChevronDown } from 'lucide-react'
+import { LogOut, ChevronDown, Zap, History, CreditCard } from 'lucide-react'
 
 export function AppNav() {
   const pathname = usePathname()
@@ -19,15 +19,12 @@ export function AppNav() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-
       setUserEmail(user.email ?? null)
-
       const { data: profile } = await supabase
         .from('user_profiles')
         .select('credits_left, plan')
         .eq('id', user.id)
         .single()
-
       if (profile) {
         setCredits(profile.credits_left)
         setPlan(profile.plan)
@@ -44,103 +41,131 @@ export function AppNav() {
   }
 
   const navLinks = [
-    { href: '/studio', label: '스튜디오', icon: Package },
+    { href: '/studio', label: '스튜디오', icon: Zap },
     { href: '/history', label: '히스토리', icon: History },
     { href: '/billing', label: '플랜·결제', icon: CreditCard },
   ]
 
-  const planColors: Record<string, string> = {
-    free: 'text-stone-500 bg-stone-100',
-    starter: 'text-blue-700 bg-blue-50',
-    pro: 'text-violet-700 bg-violet-50',
-    business: 'text-amber-700 bg-amber-50',
+  const planLabel: Record<string, string> = {
+    free: 'FREE',
+    starter: 'STARTER',
+    pro: 'PRO',
+    business: 'BUSINESS',
   }
 
   return (
-    <header className="border-b border-stone-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50"
-      style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}
+    <header
+      className="sticky top-0 z-50 bg-white h-14 flex items-center"
+      style={{ borderBottom: '1px solid #e5e5e5' }}
     >
-      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      <div className="w-full max-w-[1440px] mx-auto px-6 md:px-12 flex items-center justify-between">
+
         {/* 로고 */}
-        <Link href="/studio" className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 to-pink-500 flex items-center justify-center">
-            <Package className="w-3.5 h-3.5 text-white" strokeWidth={2.5} />
+        <Link href="/studio" className="flex items-center gap-2.5 flex-shrink-0">
+          <div className="w-7 h-7 rounded-full bg-[#111111] flex items-center justify-center">
+            <span className="text-white text-[10px] font-black tracking-tight">PC</span>
           </div>
-          <span className="text-lg tracking-tight">
-            ProductCraft <span className="italic text-stone-500">AI</span>
+          <span className="text-[14px] font-bold text-[#111111] tracking-tight hidden sm:block">
+            ProductCraft AI
           </span>
         </Link>
 
-        {/* 네비게이션 링크 */}
-        <nav className="hidden md:flex items-center gap-1">
-          {navLinks.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              className={`px-3 py-1.5 rounded-full text-sm font-sans transition-colors ${
-                pathname.startsWith(href)
-                  ? 'bg-stone-900 text-white'
-                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
-              }`}
-            >
-              {label}
-            </Link>
-          ))}
+        {/* 네비 — Nike: 활성 탭은 2px bottom underline */}
+        <nav className="hidden md:flex items-center gap-6">
+          {navLinks.map(({ href, label }) => {
+            const isActive = pathname.startsWith(href)
+            return (
+              <Link
+                key={href}
+                href={href}
+                className="relative text-[14px] font-medium pb-1 transition-colors"
+                style={{ color: isActive ? '#111111' : '#707072' }}
+              >
+                {label}
+                {/* 2px 하단 인디케이터 */}
+                {isActive && (
+                  <span
+                    className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#111111]"
+                  />
+                )}
+              </Link>
+            )
+          })}
         </nav>
 
-        {/* 오른쪽: 크레딧 + 유저 메뉴 */}
+        {/* 오른쪽: Nano Banana · 플랜 · 크레딧 · 유저 */}
         <div className="flex items-center gap-3">
-          {/* Nano Banana 배지 */}
-          <div className="hidden md:flex items-center gap-1 px-2.5 py-1 rounded-full bg-yellow-50 border border-yellow-200 text-[11px] font-sans text-yellow-800 font-medium">
+
+          {/* Nano Banana 2 */}
+          <div
+            className="hidden md:flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-[#111111]"
+            style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }}
+          >
             🍌 Nano Banana 2
           </div>
 
-          {/* 크레딧 */}
+          {/* 플랜 + 크레딧 */}
           {credits !== null && (
-            <div className="flex items-center gap-1.5 text-xs font-sans">
+            <div className="hidden md:flex items-center gap-2 text-[12px]">
               <span
-                className={`px-2 py-0.5 rounded-full font-semibold uppercase text-[10px] ${planColors[plan] ?? planColors.free}`}
+                className="px-2 py-0.5 text-[10px] font-black tracking-widest text-white bg-[#111111]"
               >
-                {plan}
+                {planLabel[plan] ?? 'FREE'}
               </span>
-              <span className="text-stone-500">
-                크레딧 <span className="font-semibold text-stone-900">{credits}</span>
+              <span className="text-[#707072]">
+                크레딧 <span className="font-bold text-[#111111]">{credits}</span>
               </span>
             </div>
           )}
 
-          {/* 유저 메뉴 */}
+          {/* 유저 드롭다운 */}
           <div className="relative">
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full border border-stone-200 text-xs font-sans text-stone-700 hover:border-stone-400 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium text-[#111111] border border-[#cacacb] hover:border-[#111111] transition-colors"
             >
               {userEmail ? userEmail.split('@')[0] : '계정'}
-              <ChevronDown className="w-3 h-3" />
+              <ChevronDown className="w-3.5 h-3.5 text-[#707072]" />
             </button>
 
             {menuOpen && (
               <>
+                <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
                 <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setMenuOpen(false)}
-                />
-                <div className="absolute right-0 top-9 z-50 w-48 rounded-2xl border border-stone-200 bg-white shadow-lg overflow-hidden">
+                  className="absolute right-0 top-10 z-50 w-48 bg-white overflow-hidden"
+                  style={{ border: '1px solid #e5e5e5' }}
+                >
                   {navLinks.map(({ href, label, icon: Icon }) => (
                     <Link
                       key={href}
                       href={href}
                       onClick={() => setMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-3 text-sm font-sans text-stone-700 hover:bg-stone-50 transition-colors"
+                      className="flex items-center gap-2.5 px-4 py-3 text-[13px] font-medium text-[#111111] hover:bg-[#f5f5f5] transition-colors"
                     >
-                      <Icon className="w-4 h-4 text-stone-400" />
+                      <Icon className="w-4 h-4 text-[#9e9ea0]" />
                       {label}
                     </Link>
                   ))}
-                  <div className="border-t border-stone-100" />
+
+                  {/* 모바일: 크레딧 표시 */}
+                  {credits !== null && (
+                    <div
+                      className="flex items-center justify-between px-4 py-2.5 md:hidden"
+                      style={{ borderTop: '1px solid #e5e5e5' }}
+                    >
+                      <span className="text-[11px] font-black tracking-widest text-white bg-[#111111] px-2 py-0.5">
+                        {planLabel[plan] ?? 'FREE'}
+                      </span>
+                      <span className="text-[12px] text-[#707072]">
+                        크레딧 <span className="font-bold text-[#111111]">{credits}</span>
+                      </span>
+                    </div>
+                  )}
+
+                  <div style={{ borderTop: '1px solid #e5e5e5' }} />
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-sans text-red-600 hover:bg-red-50 transition-colors"
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-[13px] font-medium text-[#d30005] hover:bg-[#fff5f5] transition-colors"
                   >
                     <LogOut className="w-4 h-4" />
                     로그아웃

@@ -3,23 +3,19 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card } from '@/components/ui/card'
-import { Package, Loader2, ChevronDown } from 'lucide-react'
+import { Loader2, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 
 export default function LoginPage() {
   const router = useRouter()
-
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showEmailForm, setShowEmailForm] = useState(false)
 
-  // ─── Google OAuth ────────────────────────────────────────────────────────
   const handleGoogleLogin = async () => {
     setLoading(true)
     setError(null)
@@ -30,127 +26,108 @@ export default function LoginPage() {
         options: { redirectTo: `${window.location.origin}/auth/callback` },
       })
       if (oauthError) {
-        console.error('[login] google oauth error:', oauthError)
         setError(`Google 로그인 실패: ${oauthError.message}`)
         setLoading(false)
       }
-      // 성공 시 Supabase가 OAuth 페이지로 자동 리다이렉트
     } catch (err) {
-      console.error('[login] google oauth unexpected:', err)
       setError(err instanceof Error ? err.message : 'Google 로그인 실패')
       setLoading(false)
     }
   }
 
-  // ─── 이메일/비밀번호 (보조 수단) ─────────────────────────────────────────
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
-
-    // 15초 타임아웃 (응답 hang 방지)
     const timeout = new Promise<never>((_, reject) =>
-      setTimeout(
-        () =>
-          reject(
-            new Error('로그인 요청이 응답하지 않습니다. Supabase 연결 상태를 확인해주세요.')
-          ),
-        15000
-      )
+      setTimeout(() => reject(new Error('로그인 요청이 응답하지 않습니다.')), 15000)
     )
-
     try {
       const supabase = createClient()
       const { error: loginError } = await Promise.race([
         supabase.auth.signInWithPassword({ email, password }),
         timeout,
       ])
-
       if (loginError) {
-        console.error('[login] supabase error:', loginError)
         if (loginError.message.includes('Invalid login credentials')) {
           setError('이메일 또는 비밀번호가 올바르지 않습니다.')
         } else if (loginError.message.includes('Email not confirmed')) {
           setError('이메일 인증이 완료되지 않았습니다. 메일함을 확인해주세요.')
-        } else if (loginError.status === 0 || loginError.message.includes('fetch')) {
-          setError('Supabase 서버에 연결할 수 없습니다. NEXT_PUBLIC_SUPABASE_URL을 확인해주세요.')
         } else {
           setError(`로그인 실패: ${loginError.message}`)
         }
         setLoading(false)
         return
       }
-
       router.push('/studio')
       router.refresh()
     } catch (err) {
-      console.error('[login] unexpected:', err)
       setError(err instanceof Error ? err.message : '알 수 없는 오류')
       setLoading(false)
     }
   }
 
   return (
-    <div
-      className="min-h-screen bg-stone-50 flex items-center justify-center px-4"
-      style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}
-    >
-      <Card className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-8 shadow-sm">
-        {/* 로고 */}
-        <div className="flex items-center gap-2 mb-8">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-pink-500 flex items-center justify-center">
-            <Package className="w-4 h-4 text-white" strokeWidth={2.5} />
-          </div>
-          <span className="text-xl tracking-tight">
-            ProductCraft <span className="italic text-stone-500">AI</span>
-          </span>
-        </div>
+    <div className="min-h-screen bg-[#f5f5f5] flex items-center justify-center px-4">
 
-        <h1 className="text-3xl tracking-tight mb-1">시작하기</h1>
-        <p className="text-sm text-stone-500 font-sans mb-8">
+      {/* 카드 — 0px radius (Nike: card = rounded.none) */}
+      <div
+        className="w-full max-w-[400px] bg-white p-8 md:p-10"
+        style={{ border: '1px solid #e5e5e5' }}
+      >
+        {/* 로고 */}
+        <Link href="/" className="flex items-center gap-2 mb-10">
+          <div className="w-7 h-7 rounded-full bg-[#111111] flex items-center justify-center flex-shrink-0">
+            <span className="text-white text-[10px] font-black tracking-tight">PC</span>
+          </div>
+          <span className="text-[14px] font-bold text-[#111111] tracking-tight">
+            ProductCraft AI
+          </span>
+        </Link>
+
+        <h1 className="text-[28px] font-black text-[#111111] mb-1 leading-tight">
+          시작하기
+        </h1>
+        <p className="text-[14px] text-[#707072] mb-8">
           30초 만에 팔리는 상품 콘텐츠를 만들어보세요
         </p>
 
+        {/* 에러 */}
         {error && (
-          <div className="mb-5 p-3 rounded-xl bg-red-50 border border-red-200 text-sm font-sans text-red-700">
+          <div
+            className="mb-5 p-3 text-[13px] text-[#d30005]"
+            style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}
+          >
             {error}
           </div>
         )}
 
-        {/* ── Google OAuth 버튼 (주요 CTA) ── */}
-        <Button
+        {/* Google 로그인 — button-primary */}
+        <button
           type="button"
           onClick={handleGoogleLogin}
           disabled={loading}
-          className="w-full rounded-full bg-stone-900 text-white font-sans font-semibold hover:bg-stone-700 h-12 text-base mb-3"
+          className="w-full h-12 rounded-full bg-[#111111] text-white text-[14px] font-semibold flex items-center justify-center gap-2 mb-3 hover:bg-[#333] transition-colors disabled:opacity-50"
         >
           {loading ? (
-            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 로그인 중...</>
+            <><Loader2 className="w-4 h-4 animate-spin" /> 로그인 중...</>
           ) : (
-            <>
-              <GoogleIcon className="w-5 h-5 mr-2" />
-              Google로 계속하기
-            </>
+            <><GoogleIcon className="w-5 h-5" /> Google로 계속하기</>
           )}
-        </Button>
+        </button>
 
-        {/* ── 구분선 ── */}
-        <div className="my-5 relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-stone-200" />
-          </div>
-          <div className="relative flex justify-center">
-            <span className="bg-white px-3 text-xs font-sans text-stone-400">
-              또는 이메일로 로그인
-            </span>
-          </div>
+        {/* 구분선 */}
+        <div className="my-6 flex items-center gap-4">
+          <div className="flex-1 h-px bg-[#e5e5e5]" />
+          <span className="text-[12px] text-[#9e9ea0]">또는 이메일로 로그인</span>
+          <div className="flex-1 h-px bg-[#e5e5e5]" />
         </div>
 
-        {/* ── 이메일 폼 (토글) ── */}
+        {/* 이메일 폼 */}
         {!showEmailForm ? (
           <button
             onClick={() => setShowEmailForm(true)}
-            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-full border border-stone-300 text-sm font-sans text-stone-600 hover:border-stone-500 hover:text-stone-900 transition-colors"
+            className="w-full h-11 rounded-full border border-[#cacacb] text-[14px] text-[#707072] font-medium flex items-center justify-center gap-1.5 hover:border-[#111111] hover:text-[#111111] transition-colors"
           >
             이메일 / 비밀번호로 로그인
             <ChevronDown className="w-4 h-4" />
@@ -158,7 +135,7 @@ export default function LoginPage() {
         ) : (
           <form onSubmit={handleEmailLogin} className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="font-sans text-sm text-stone-700" htmlFor="email">
+              <Label className="text-[13px] font-semibold text-[#111111]" htmlFor="email">
                 이메일
               </Label>
               <Input
@@ -169,12 +146,11 @@ export default function LoginPage() {
                 placeholder="you@example.com"
                 required
                 autoFocus
-                className="rounded-xl font-sans"
+                className="rounded-none border-[#cacacb] focus-visible:ring-0 focus-visible:border-[#111111] h-11 text-[14px]"
               />
             </div>
-
             <div className="space-y-1.5">
-              <Label className="font-sans text-sm text-stone-700" htmlFor="password">
+              <Label className="text-[13px] font-semibold text-[#111111]" htmlFor="password">
                 비밀번호
               </Label>
               <Input
@@ -184,64 +160,48 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="rounded-xl font-sans"
+                className="rounded-none border-[#cacacb] focus-visible:ring-0 focus-visible:border-[#111111] h-11 text-[14px]"
               />
             </div>
-
-            <Button
+            <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-full bg-stone-900 text-white font-sans font-semibold hover:bg-stone-700"
+              className="w-full h-12 rounded-full bg-[#111111] text-white text-[14px] font-semibold flex items-center justify-center gap-2 hover:bg-[#333] transition-colors disabled:opacity-50"
             >
               {loading ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 로그인 중...</>
+                <><Loader2 className="w-4 h-4 animate-spin" /> 로그인 중...</>
               ) : (
                 '이메일로 로그인'
               )}
-            </Button>
+            </button>
           </form>
         )}
 
-        <p className="mt-6 text-center text-sm font-sans text-stone-500">
+        <p className="mt-8 text-center text-[14px] text-[#707072]">
           계정이 없으신가요?{' '}
-          <Link href="/auth/signup" className="text-stone-900 font-semibold hover:underline">
+          <Link href="/auth/signup" className="text-[#111111] font-bold hover:underline">
             무료로 시작하기
           </Link>
         </p>
-
-        <p className="mt-3 text-center text-xs font-sans text-stone-400 leading-relaxed">
+        <p className="mt-3 text-center text-[12px] text-[#9e9ea0] leading-relaxed">
           계속하면{' '}
-          <Link href="/terms" className="underline hover:text-stone-700">이용약관</Link>
+          <Link href="/terms" className="underline hover:text-[#111111]">이용약관</Link>
           {' '}및{' '}
-          <Link href="/privacy" className="underline hover:text-stone-700">개인정보처리방침</Link>
+          <Link href="/privacy" className="underline hover:text-[#111111]">개인정보처리방침</Link>
           에 동의하게 됩니다.
         </p>
-      </Card>
+      </div>
     </div>
   )
 }
 
-// ─── Google 아이콘 ─────────────────────────────────────────────────────────
-
 function GoogleIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-        fill="#4285F4"
-      />
-      <path
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-        fill="#34A853"
-      />
-      <path
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-        fill="#EA4335"
-      />
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
     </svg>
   )
 }

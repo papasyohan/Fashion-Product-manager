@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-[#f5f5f5]">
       <KakaoSdkLoader />
       <TossSdkLoader />
       <AppNav />

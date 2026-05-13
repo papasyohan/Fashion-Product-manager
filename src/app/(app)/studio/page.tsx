@@ -233,16 +233,16 @@ function StudioPageInner() {
 
   if (store.status === 'done' && store.result && store.mode) {
     return (
-      <div style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}>
-        <div className="border-b border-stone-200 bg-white sticky top-0 z-10">
+      <div>
+        <div className="bg-white sticky top-0 z-10" style={{ borderBottom: '1px solid #e5e5e5' }}>
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
             <button
               onClick={() => store.reset()}
-              className="text-sm font-sans text-stone-600 hover:text-stone-900"
+              className="text-[14px] font-medium text-[#707072] hover:text-[#111111] transition-colors"
             >
               ← 모드 선택으로
             </button>
-            <span className="text-xs font-sans text-stone-400 uppercase tracking-widest">
+            <span className="text-[11px] font-semibold text-[#9e9ea0] uppercase tracking-widest">
               {store.mode === 'quick' ? 'Quick Mode' : 'Studio Mode'}
             </span>
           </div>
@@ -274,26 +274,23 @@ function StudioPageInner() {
 
   if (isGenerating) {
     return (
-      <div
-        className="min-h-[60vh] flex items-center justify-center"
-        style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}
-      >
+      <div className="min-h-[60vh] flex items-center justify-center">
         <div className="text-center max-w-sm px-6">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-stone-900 flex items-center justify-center mb-6">
+          <div className="w-16 h-16 mx-auto bg-[#111111] flex items-center justify-center mb-6">
             <Loader2 className="w-8 h-8 text-white animate-spin" />
           </div>
-          <h2 className="text-2xl tracking-tight mb-2">
+          <h2 className="text-[22px] font-black text-[#111111] mb-2">
             {selectStatusLabel(store.status)}
           </h2>
-          <p className="text-sm font-sans text-stone-500 mb-6">
+          <p className="text-[14px] text-[#707072] mb-6">
             {store.status === 'generating_thumbnails'
               ? '🍌 Nano Banana 2로 썸네일을 생성하고 있습니다...'
               : store.mode === 'quick'
               ? 'AI가 트렌드 키워드를 분석하고 있습니다...'
               : 'AI 에이전트들이 협력하여 콘텐츠를 생성합니다...'}
           </p>
-          <Progress value={store.progress} className="h-2 rounded-full" />
-          <p className="mt-3 text-xs font-sans text-stone-400">{store.progress}%</p>
+          <Progress value={store.progress} className="h-1.5 rounded-none" />
+          <p className="mt-3 text-[12px] text-[#9e9ea0]">{store.progress}%</p>
         </div>
       </div>
     )
@@ -302,32 +299,35 @@ function StudioPageInner() {
   // ─── 메인 선택 화면 ────────────────────────────────────────────────────
 
   return (
-    <div style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}>
+    <div>
       {/* Hero */}
-      <section className="max-w-6xl mx-auto px-6 pt-14 pb-10 text-center">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-900 text-stone-50 text-xs font-sans mb-6">
+      <section className="max-w-[1440px] mx-auto px-6 md:px-12 pt-14 pb-10 text-center">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#111111] text-white text-[11px] font-semibold mb-6">
           <Sparkles className="w-3 h-3" />
           신제품 등록, 30초의 혁명
         </div>
-        <h1 className="text-5xl md:text-6xl leading-tight tracking-tight text-stone-900">
+        <h1
+          className="font-black text-[#111111] mb-4"
+          style={{ fontSize: 'clamp(32px, 5vw, 56px)', lineHeight: 1.1 }}
+        >
           사진 한 장으로 시작하는
           <br />
-          <span className="italic text-stone-600">팔리는 상품 콘텐츠</span>
+          <span className="italic text-[#707072]">팔리는 상품 콘텐츠</span>
         </h1>
-        <p className="mt-6 text-stone-500 font-sans text-base max-w-xl mx-auto">
+        <p className="text-[15px] text-[#707072] max-w-xl mx-auto leading-relaxed">
           제품 이미지를 올리면 AI가 트렌드 키워드를 반영해 상품명, 한줄 카피,
           상세 설명까지 자동으로 만들어드립니다.
         </p>
       </section>
 
       {/* Mode Selection */}
-      <section className="max-w-6xl mx-auto px-6 pb-10">
+      <section className="max-w-[1440px] mx-auto px-6 md:px-12 pb-10">
         <div className="mb-6 flex items-end justify-between">
-          <h2 className="text-2xl tracking-tight">
+          <h2 className="text-[20px] font-black text-[#111111]">
             모드 선택{' '}
-            <span className="text-stone-400 italic">— 무엇을 만들어드릴까요?</span>
+            <span className="text-[#9e9ea0] font-normal italic">— 무엇을 만들어드릴까요?</span>
           </h2>
-          <span className="text-xs text-stone-400 font-sans hidden md:block">언제든 변경 가능</span>
+          <span className="text-[12px] text-[#9e9ea0] hidden md:block">언제든 변경 가능</span>
         </div>
 
         <ModeSelector
@@ -337,7 +337,10 @@ function StudioPageInner() {
         />
 
         {errorMsg && (
-          <div className="mt-4 p-4 rounded-2xl bg-red-50 border border-red-200 text-sm font-sans text-red-700">
+          <div
+            className="mt-4 p-4 text-[13px] text-[#d30005]"
+            style={{ backgroundColor: '#fff5f5', border: '1px solid #fecaca' }}
+          >
             {errorMsg}
           </div>
         )}
@@ -351,49 +354,50 @@ function StudioPageInner() {
         </div>
       </section>
 
-      {/* Behind the Scenes */}
-      <section className="max-w-6xl mx-auto px-6 pb-24">
-        <div className="rounded-3xl bg-stone-900 text-stone-50 p-10 md:p-14 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-amber-400/20 to-pink-500/20 blur-3xl rounded-full" />
-          <div className="relative">
-            <div className="text-xs font-sans uppercase tracking-[0.2em] text-stone-400 mb-3">
-              Behind the Scenes
-            </div>
-            <h2 className="text-4xl tracking-tight mb-2">
-              9명의 AI 에이전트가{' '}
-              <span className="italic text-stone-300">오토파일럿</span>으로
-            </h2>
-            <p className="text-stone-400 font-sans mb-8 max-w-xl">
-              Spec → Test → Build → QA → Deploy. Claude Code 서브에이전트 오케스트레이션.
-            </p>
-            <div className="grid grid-cols-3 md:grid-cols-9 gap-2 mb-6">
-              {['Spec', 'Test', 'Back', 'Front', 'AI Pipe', 'QA', 'Security', 'DevOps', 'Orchestrator'].map(
-                (agent) => (
-                  <div
-                    key={agent}
-                    className="px-2 py-3 rounded-xl bg-stone-800 border border-stone-700 text-center text-[11px] font-sans font-medium"
-                  >
-                    {agent}
-                  </div>
-                )
-              )}
-            </div>
-            <div className="pt-6 border-t border-stone-800 grid md:grid-cols-3 gap-4">
-              <div>
-                <div className="text-[10px] font-sans uppercase tracking-wider text-stone-500 mb-1">Text &amp; Vision</div>
-                <div className="font-sans text-sm font-semibold">Claude Sonnet 4.5</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-sans uppercase tracking-wider text-stone-500 mb-1">Image Generation</div>
-                <div className="font-sans text-sm font-semibold flex items-center gap-1.5 flex-wrap">
-                  🍌 Nano Banana 2
-                  <span className="text-[10px] font-normal text-stone-400">(Gemini 3.1 Flash Image)</span>
+      {/* Behind the Scenes — Nike dark editorial tile, 0px radius */}
+      <section className="max-w-[1440px] mx-auto px-6 md:px-12 pb-16">
+        <div className="bg-[#111111] text-white p-10 md:p-14">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#9e9ea0] mb-4">
+            Behind the Scenes
+          </div>
+          <h2
+            className="font-black text-white mb-3"
+            style={{ fontSize: 'clamp(24px, 3.5vw, 40px)', lineHeight: 1.1 }}
+          >
+            9개의 AI 에이전트가{' '}
+            <span className="italic text-[#9e9ea0]">오토파일럿</span>으로
+          </h2>
+          <p className="text-[14px] text-[#9e9ea0] mb-8 max-w-xl">
+            Spec → Test → Build → QA → Deploy. Claude Code 서브에이전트 오케스트레이션.
+          </p>
+          <div className="grid grid-cols-3 md:grid-cols-9 gap-2 mb-6">
+            {['Spec', 'Test', 'Back', 'Front', 'AI Pipe', 'QA', 'Security', 'DevOps', 'Orchestrator'].map(
+              (agent) => (
+                <div
+                  key={agent}
+                  className="py-3 text-center text-[11px] font-medium text-[#9e9ea0]"
+                  style={{ backgroundColor: '#1c1c1c', border: '1px solid #2a2a2a' }}
+                >
+                  {agent}
                 </div>
+              )
+            )}
+          </div>
+          <div className="pt-6 grid md:grid-cols-3 gap-4" style={{ borderTop: '1px solid #2a2a2a' }}>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[#4b4b4d] mb-1">Text &amp; Vision</div>
+              <div className="text-[14px] font-semibold text-white">Claude Sonnet 4.5</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[#4b4b4d] mb-1">Image Generation</div>
+              <div className="text-[14px] font-semibold text-white flex items-center gap-1.5 flex-wrap">
+                🍌 Nano Banana 2
+                <span className="text-[11px] font-normal text-[#707072]">(Gemini 3.1 Flash Image)</span>
               </div>
-              <div>
-                <div className="text-[10px] font-sans uppercase tracking-wider text-stone-500 mb-1">Infra</div>
-                <div className="font-sans text-sm font-semibold">Next.js 16 · Supabase · Vercel</div>
-              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[#4b4b4d] mb-1">Infra</div>
+              <div className="text-[14px] font-semibold text-white">Next.js 16 · Supabase · Vercel</div>
             </div>
           </div>
         </div>
