@@ -1,39 +1,120 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { Sparkles, Package, Loader2 } from 'lucide-react'
+import { useState, useCallback, useEffect, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { Sparkles, Loader2 } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { UploadDropzone } from '@/components/upload-dropzone'
 import { ResultCard } from '@/components/result-card'
 import { ModeSelector } from '@/components/mode-selector'
+import { CreditGuardModal } from '@/components/credit-guard-modal'
+import { createClient } from '@/lib/supabase/client'
 import {
   useStudioStore,
   selectIsGenerating,
   selectStatusLabel,
   type StudioMode,
+  type GenerationResult,
 } from '@/store/studio'
+import type { CreditGuardResult } from '@/lib/credit-guard'
 
 // ─── 진행률 매핑 ─────────────────────────────────────────────────────────
 
-const STATUS_PROGRESS = {
+const STATUS_PROGRESS: Record<string, number> = {
   idle: 0,
   uploading: 15,
   analyzing: 30,
-  generating_names: 55,
-  generating_tagline: 70,
-  generating_description: 85,
+  generating_names: 50,
+  generating_tagline: 65,
+  generating_description: 80,
   generating_thumbnails: 92,
   done: 100,
   error: 0,
 }
 
-// ─── 메인 페이지 ──────────────────────────────────────────────────────────
+// ─── 내부 컴포넌트 (useSearchParams 사용) ────────────────────────────────
 
-export default function StudioPage() {
+function StudioPageInner() {
   const store = useStudioStore()
   const isGenerating = useStudioStore(selectIsGenerating)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const router = useRouter()
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [creditsLeft, setCreditsLeft] = useState(0)
+  const [guardModal, setGuardModal] = useState<{
+    open: boolean
+    result: CreditGuardResult | null
+    reason: 'insufficient_credits' | 'plan_required'
+  }>({ open: false, result: null, reason: 'insufficient_credits' })
+
+  // ─── 프로필 크레딧 로드 ────────────────────────────────────────────────
+  useEffect(() => {
+    const load = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('credits_left')
+        .eq('id', user.id)
+        .single()
+      if (data) setCreditsLeft(data.credits_left)
+    }
+    load()
+  }, [])
+
+  // ─── 히스토리에서 프로젝트 복원 (#3) ──────────────────────────────────
+  useEffect(() => {
+    const projectId = searchParams.get('projectId')
+    if (!projectId || store.status !== 'idle') return
+
+    const loadProject = async () => {
+      try {
+        const supabase = createClient()
+        const { data: project } = await supabase
+          .from('projects')
+          .select('id, mode, product_image_url, generations(type, payload)')
+          .eq('id', projectId)
+          .single()
+
+        if (!project) return
+
+        type Gen = { type: string; payload: Record<string, unknown> }
+        const gens = (project.generations as Gen[]) ?? []
+        const naming   = gens.find((g) => g.type === 'naming')
+        const taglineG = gens.find((g) => g.type === 'tagline')
+        const descG    = gens.find((g) => g.type === 'description')
+        const analyzeG = gens.find((g) => g.type === 'analyze')
+
+        if (!naming || !taglineG || !descG) return
+
+        store.setMode(project.mode as StudioMode)
+        store.setProjectId(projectId)
+        if (project.product_image_url) store.setImage(project.product_image_url)
+
+        store.setResult({
+          names:       (naming.payload.names   as GenerationResult['names']) ?? [],
+          tagline:     (taglineG.payload.tagline  as string) ?? '',
+          description: (descG.payload.description as string) ?? '',
+          selectedNameIndex: 0,
+          category: analyzeG?.payload?.category   as string | undefined,
+          keywords: analyzeG?.payload?.keywords   as string[] | undefined,
+          features: analyzeG?.payload?.keyFeatures as string[] | undefined,
+        })
+
+        // URL 파라미터 정리
+        router.replace('/studio')
+      } catch (err) {
+        console.error('[StudioPage] loadProject failed:', err)
+      }
+    }
+
+    loadProject()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  // ─── 업로드 완료 핸들러 ────────────────────────────────────────────────
   const handleUploadComplete = useCallback(
     async (imageUrl: string, base64: string) => {
       if (!store.mode) return
@@ -45,14 +126,12 @@ export default function StudioPage() {
     [store.mode]
   )
 
-  const runPipeline = async (
-    imageUrl: string,
-    base64: string,
-    mode: StudioMode
-  ) => {
+  // ─── 파이프라인 실행 ────────────────────────────────────────────────────
+  const runPipeline = async (imageUrl: string, base64: string, mode: StudioMode) => {
     store.setStatus('analyzing', STATUS_PROGRESS.analyzing)
 
     try {
+      // ── Step 1~4: 텍스트 파이프라인 ──────────────────────────────────
       const res = await fetch('/api/generate/pipeline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -61,24 +140,88 @@ export default function StudioPage() {
 
       store.setStatus('generating_names', STATUS_PROGRESS.generating_names)
 
+      // 402 → 크레딧/플랜 부족 → 업그레이드 모달 (#4)
+      if (res.status === 402) {
+        const err = await res.json()
+        const gr = err.guardResult as CreditGuardResult
+        store.reset()
+        setGuardModal({
+          open: true,
+          result: gr,
+          reason: gr?.reason?.includes('해상도') ? 'plan_required' : 'insufficient_credits',
+        })
+        return
+      }
+
       if (!res.ok) {
         const err = await res.json()
-        const stepInfo = err.step ? ` [step: ${err.step}]` : ''
+        const stepInfo  = err.step  ? ` [step: ${err.step}]` : ''
         const debugInfo = err.debug && err.debug !== err.error ? ` (${err.debug})` : ''
         throw new Error(`${err.error ?? 'AI 생성 실패'}${stepInfo}${debugInfo}`)
       }
 
       store.setStatus('generating_tagline', STATUS_PROGRESS.generating_tagline)
       const data = await res.json()
-
       store.setStatus('generating_description', STATUS_PROGRESS.generating_description)
       store.setProjectId(data.projectId)
-      store.setResult({
-        names: data.names,
-        tagline: data.tagline,
+
+      // ── 기본 결과 조립 ────────────────────────────────────────────────
+      const result: GenerationResult = {
+        names:       data.names,
+        tagline:     data.tagline,
         description: data.description,
         selectedNameIndex: 0,
-      })
+        category: data.analysis?.category,
+        keywords: data.analysis?.keywords,
+        features: data.analysis?.keyFeatures,
+      }
+
+      // ── Step 5: 스튜디오 모드 썸네일 자동 생성 (#2) ──────────────────
+      if (mode === 'studio') {
+        store.setStatus('generating_thumbnails', STATUS_PROGRESS.generating_thumbnails)
+        try {
+          const thumbRes = await fetch('/api/generate/thumbnail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectId:   data.projectId,
+              imageBase64: base64,
+              imageUrl,
+              analysis:    data.analysis,
+              aspectRatios: ['1:1', '4:5', '9:16', '16:9'],
+              count:       1,
+              resolution:  '2K',
+            }),
+          })
+
+          if (thumbRes.ok) {
+            const thumbData = await thumbRes.json()
+            const thumbs = (thumbData.thumbnails ?? []) as Array<{
+              url: string; width: number; height: number; aspect_ratio: string
+            }>
+            result.thumbnails = thumbs.map((t) => ({
+              ratio:  t.aspect_ratio,
+              label:  t.aspect_ratio,
+              size:   `${t.width}×${t.height}`,
+              url:    t.url,
+              width:  t.width,
+              height: t.height,
+            }))
+            result.primaryThumbnailUrl = thumbs[0]?.url
+          } else if (thumbRes.status === 402) {
+            // 썸네일 크레딧 부족 — 텍스트 결과는 표시 유지
+            console.warn('[pipeline] thumbnail credit guard — showing text results only')
+          }
+        } catch (thumbErr) {
+          // 썸네일 실패는 non-fatal
+          console.warn('[pipeline] thumbnail failed, showing text results:', thumbErr)
+        }
+      }
+
+      store.setResult(result)
+
+      // 크레딧 갱신
+      setCreditsLeft((prev) => Math.max(prev - 1, 0))
     } catch (err) {
       const message = err instanceof Error ? err.message : '알 수 없는 오류'
       store.setError(message)
@@ -86,7 +229,7 @@ export default function StudioPage() {
     }
   }
 
-  // ─── 결과 화면 ──────────────────────────────────────────────────────────
+  // ─── 결과 화면 ────────────────────────────────────────────────────────
 
   if (store.status === 'done' && store.result && store.mode) {
     return (
@@ -110,13 +253,23 @@ export default function StudioPage() {
           projectId={store.projectId}
           onSelectName={store.selectName}
           onRegenerate={() => store.reset()}
-          onSave={() => alert('저장 기능은 Sprint 2에서 구현됩니다.')}
         />
+
+        {/* 크레딧 업그레이드 모달 */}
+        {guardModal.open && guardModal.result && (
+          <CreditGuardModal
+            open={guardModal.open}
+            onClose={() => setGuardModal((s) => ({ ...s, open: false }))}
+            guardResult={guardModal.result}
+            reason={guardModal.reason}
+            creditsLeft={creditsLeft}
+          />
+        )}
       </div>
     )
   }
 
-  // ─── 생성 중 화면 ────────────────────────────────────────────────────────
+  // ─── 생성 중 화면 ──────────────────────────────────────────────────────
 
   if (isGenerating) {
     return (
@@ -132,7 +285,9 @@ export default function StudioPage() {
             {selectStatusLabel(store.status)}
           </h2>
           <p className="text-sm font-sans text-stone-500 mb-6">
-            {store.mode === 'quick'
+            {store.status === 'generating_thumbnails'
+              ? '🍌 Nano Banana 2로 썸네일을 생성하고 있습니다...'
+              : store.mode === 'quick'
               ? 'AI가 트렌드 키워드를 분석하고 있습니다...'
               : 'AI 에이전트들이 협력하여 콘텐츠를 생성합니다...'}
           </p>
@@ -143,7 +298,7 @@ export default function StudioPage() {
     )
   }
 
-  // ─── 메인 선택 화면 ─────────────────────────────────────────────────────
+  // ─── 메인 선택 화면 ────────────────────────────────────────────────────
 
   return (
     <div style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}>
@@ -180,14 +335,12 @@ export default function StudioPage() {
           disabled={isGenerating}
         />
 
-        {/* 에러 메시지 */}
         {errorMsg && (
           <div className="mt-4 p-4 rounded-2xl bg-red-50 border border-red-200 text-sm font-sans text-red-700">
             {errorMsg}
           </div>
         )}
 
-        {/* Upload Dropzone */}
         <div className="mt-8">
           <UploadDropzone
             disabled={!store.mode}
@@ -226,34 +379,45 @@ export default function StudioPage() {
             </div>
             <div className="pt-6 border-t border-stone-800 grid md:grid-cols-3 gap-4">
               <div>
-                <div className="text-[10px] font-sans uppercase tracking-wider text-stone-500 mb-1">
-                  Text &amp; Vision
-                </div>
+                <div className="text-[10px] font-sans uppercase tracking-wider text-stone-500 mb-1">Text &amp; Vision</div>
                 <div className="font-sans text-sm font-semibold">Claude Sonnet 4.5</div>
               </div>
               <div>
-                <div className="text-[10px] font-sans uppercase tracking-wider text-stone-500 mb-1">
-                  Image Generation
-                </div>
+                <div className="text-[10px] font-sans uppercase tracking-wider text-stone-500 mb-1">Image Generation</div>
                 <div className="font-sans text-sm font-semibold flex items-center gap-1.5 flex-wrap">
                   🍌 Nano Banana 2
-                  <span className="text-[10px] font-normal text-stone-400">
-                    (Gemini 3.1 Flash Image)
-                  </span>
+                  <span className="text-[10px] font-normal text-stone-400">(Gemini 3.1 Flash Image)</span>
                 </div>
               </div>
               <div>
-                <div className="text-[10px] font-sans uppercase tracking-wider text-stone-500 mb-1">
-                  Infra
-                </div>
-                <div className="font-sans text-sm font-semibold">
-                  Next.js 16 · Supabase · Vercel
-                </div>
+                <div className="text-[10px] font-sans uppercase tracking-wider text-stone-500 mb-1">Infra</div>
+                <div className="font-sans text-sm font-semibold">Next.js 16 · Supabase · Vercel</div>
               </div>
             </div>
           </div>
         </div>
       </section>
+
+      {/* 크레딧 업그레이드 모달 */}
+      {guardModal.open && guardModal.result && (
+        <CreditGuardModal
+          open={guardModal.open}
+          onClose={() => setGuardModal((s) => ({ ...s, open: false }))}
+          guardResult={guardModal.result}
+          reason={guardModal.reason}
+          creditsLeft={creditsLeft}
+        />
+      )}
     </div>
+  )
+}
+
+// ─── 기본 export — Suspense 래핑 (useSearchParams 요구사항) ──────────────
+
+export default function StudioPage() {
+  return (
+    <Suspense fallback={null}>
+      <StudioPageInner />
+    </Suspense>
   )
 }

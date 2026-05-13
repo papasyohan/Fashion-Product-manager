@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ShareSheet } from '@/components/share-sheet'
+import { ThumbnailGrid, type ThumbnailItem } from '@/components/thumbnail-grid'
 import type { GenerationResult } from '@/store/studio'
 
 interface ResultCardProps {
@@ -190,10 +191,31 @@ export function ResultCard({
         </Card>
       </section>
 
+      {/* 스튜디오 모드 전용: 썸네일 */}
+      {mode === 'studio' && result.thumbnails && result.thumbnails.length > 0 && (
+        <section className="mb-8">
+          <SectionHeader number="04" title="썸네일" subtitle="Nano Banana 2" color="violet" />
+          <ThumbnailGrid
+            thumbnails={result.thumbnails
+              .filter((t): t is typeof t & { url: string } => !!t.url)
+              .map<ThumbnailItem>((t) => ({
+                url: t.url,
+                width: t.width ?? 0,
+                height: t.height ?? 0,
+                aspectRatio: t.ratio,
+              }))}
+            onSelectPrimary={(thumb) => {
+              // primary URL은 result에 이미 설정돼 있음 — 재선택 시 별도 처리 불필요
+              void thumb
+            }}
+          />
+        </section>
+      )}
+
       {/* 스튜디오 모드 전용: 상세페이지 HTML */}
       {mode === 'studio' && (
         <section className="mb-8">
-          <SectionHeader number="04" title="상세페이지 HTML" subtitle="Pro+ 내보내기" color="violet" />
+          <SectionHeader number="05" title="상세페이지 HTML" subtitle="Pro+ 내보내기" color="violet" />
           {!detailPageHtml ? (
             <Card className="rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50/50 p-8 text-center">
               <div className="w-12 h-12 mx-auto rounded-2xl bg-violet-600 flex items-center justify-center mb-4">
@@ -254,7 +276,7 @@ export function ResultCard({
       {/* 스튜디오 모드 전용: 공유 */}
       {mode === 'studio' && (
         <section className="mb-8">
-          <SectionHeader number="05" title="공유하기" color="violet" />
+          <SectionHeader number="06" title="공유하기" color="violet" />
           <div className="grid grid-cols-3 gap-3">
             <ShareButton
               icon={<MessageSquare className="w-5 h-5" />}
