@@ -144,7 +144,8 @@ function StudioPageInner() {
       if (res.status === 402) {
         const err = await res.json()
         const gr = err.guardResult as CreditGuardResult
-        store.reset()
+        // reset() 대신 status만 idle로 — 모드/이미지 선택 유지하여 모달 닫아도 처음부터 다시 시작 안 함
+        store.setStatus('idle', 0)
         setGuardModal({
           open: true,
           result: gr,
