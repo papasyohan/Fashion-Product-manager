@@ -91,6 +91,14 @@ const COLOR_MAP: Record<string, { badge: string; button: string; border: string;
   amber:  { badge: 'bg-amber-50 text-amber-700',     button: 'bg-amber-500 text-white hover:bg-amber-600',          border: 'border-amber-200',  text: 'text-amber-700' },
 }
 
+// ─── 크레딧 충전 팩 ──────────────────────────────────────────────────────────
+
+const TOPUP_PACKS = [
+  { id: 'topup10',  credits: 10,  price: 3000,   priceLabel: '₩3,000',  highlight: false },
+  { id: 'topup30',  credits: 30,  price: 8000,   priceLabel: '₩8,000',  highlight: true, badge: '추천' },
+  { id: 'topup100', credits: 100, price: 24000,  priceLabel: '₩24,000', highlight: false },
+]
+
 interface UsageEvent {
   event_type: string
   credits_used: number
@@ -169,6 +177,39 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
         failUrl: `${origin}/billing?status=fail`,
       })
       // requestPayment가 리다이렉트 처리하므로 아래는 도달하지 않음
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '결제 요청 실패'
+      setBanner({ kind: 'error', text: message })
+    } finally {
+      setLoadingPlan(null)
+    }
+  }
+
+  const handleTopup = async (pack: typeof TOPUP_PACKS[number]) => {
+    const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY
+    if (!clientKey) {
+      setBanner({ kind: 'error', text: 'Toss 클라이언트 키가 설정되지 않았습니다.' })
+      return
+    }
+    if (typeof window === 'undefined' || !window.TossPayments) {
+      setBanner({ kind: 'error', text: 'Toss SDK가 아직 로드되지 않았습니다. 잠시 후 다시 시도해주세요.' })
+      return
+    }
+    const loadingKey = `topup-${pack.id}`
+    setLoadingPlan(loadingKey)
+    try {
+      const orderId = `topup-${pack.id}-${userId}-${Date.now()}`
+      const origin = window.location.origin
+      const tossPayments = window.TossPayments(clientKey)
+      await tossPayments.requestPayment('카드', {
+        amount: pack.price,
+        orderId,
+        orderName: `ProductCraft AI 크레딧 ${pack.credits}개 충전`,
+        customerName: email.split('@')[0] || '구매자',
+        customerEmail: email,
+        successUrl: `${origin}/billing?status=success`,
+        failUrl: `${origin}/billing?status=fail`,
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : '결제 요청 실패'
       setBanner({ kind: 'error', text: message })
@@ -292,6 +333,48 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
             </div>
           )
         })}
+      </div>
+
+      {/* 크레딧 충전 (소액 일회성 구매) */}
+      <div id="topup" className="mb-12 scroll-mt-20">
+        <h2 className="text-2xl tracking-tight mb-1">
+          크레딧 충전 <span className="text-stone-400 italic text-lg">— 플랜 변경 없이</span>
+        </h2>
+        <p className="text-sm font-sans text-stone-500 mb-6">
+          플랜을 유지하면서 크레딧만 추가 구매할 수 있습니다.
+        </p>
+        <div className="grid sm:grid-cols-3 gap-4">
+          {TOPUP_PACKS.map((pack) => (
+            <div
+              key={pack.id}
+              className={`rounded-3xl border-2 p-6 flex flex-col ${
+                pack.highlight ? 'border-stone-900 shadow-md' : 'border-stone-200'
+              }`}
+            >
+              {pack.badge && (
+                <div className="mb-3">
+                  <span className="px-2 py-0.5 rounded-full bg-stone-900 text-white text-[10px] font-sans font-bold">
+                    {pack.badge}
+                  </span>
+                </div>
+              )}
+              <p className="text-3xl tracking-tight mb-0.5">{pack.priceLabel}</p>
+              <p className="text-sm font-sans text-stone-500 mb-1">
+                {pack.credits.toLocaleString()}크레딧
+              </p>
+              <p className="text-xs font-sans text-stone-400 mb-5">
+                크레딧당 {Math.round(pack.price / pack.credits).toLocaleString()}원
+              </p>
+              <Button
+                onClick={() => handleTopup(pack)}
+                disabled={loadingPlan === `topup-${pack.id}`}
+                className="mt-auto w-full rounded-full text-sm font-sans font-semibold bg-stone-900 text-white hover:bg-stone-700 transition-colors"
+              >
+                {loadingPlan === `topup-${pack.id}` ? '처리중...' : '충전하기'}
+              </Button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 사용량 내역 */}

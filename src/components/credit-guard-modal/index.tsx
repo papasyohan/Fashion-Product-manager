@@ -11,7 +11,7 @@ const PLANS = [
   {
     id: 'starter',
     name: 'Starter',
-    price: '₩9,900',
+    price: '₩19,900',
     period: '/월',
     credits: 100,
     highlight: false,
@@ -19,7 +19,7 @@ const PLANS = [
   {
     id: 'pro',
     name: 'Pro',
-    price: '₩29,900',
+    price: '₩49,900',
     period: '/월',
     credits: 500,
     highlight: true,
@@ -28,7 +28,7 @@ const PLANS = [
   {
     id: 'business',
     name: 'Business',
-    price: '₩79,900',
+    price: '₩149,000',
     period: '/월',
     credits: 2000,
     highlight: false,

@@ -6,12 +6,31 @@ export const metadata = {
   title: 'ProductCraft AI — 히스토리',
 }
 
+// 플랜별 보관 기간 (일수, null = 무제한)
+const RETENTION_DAYS: Record<string, number | null> = {
+  free:     7,
+  starter:  30,
+  pro:      null,
+  business: null,
+}
+
 export default async function HistoryPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
-  const { data: projects } = await supabase
+  // 플랜 조회
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('plan')
+    .eq('id', user.id)
+    .single()
+
+  const plan = (profile?.plan as string) ?? 'free'
+  const retentionDays = RETENTION_DAYS[plan] ?? 7
+
+  // 보관 기간 필터 적용
+  let query = supabase
     .from('projects')
     .select(`
       id,
@@ -27,7 +46,15 @@ export default async function HistoryPage() {
     `)
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
-    .limit(50)
+    .limit(100)
 
-  return <HistoryClient projects={projects ?? []} />
+  if (retentionDays !== null) {
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - retentionDays)
+    query = query.gte('created_at', cutoff.toISOString())
+  }
+
+  const { data: projects } = await query
+
+  return <HistoryClient projects={projects ?? []} plan={plan} retentionDays={retentionDays} />
 }

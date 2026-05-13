@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Zap, Wand2, Clock, ImageOff, ChevronRight, Trash2 } from 'lucide-react'
+import { Zap, Wand2, Clock, ImageOff, ChevronRight, Trash2, Loader2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
 interface Generation {
   type: string
@@ -22,12 +23,49 @@ interface Project {
 
 interface Props {
   projects: Project[]
+  plan?: string
+  retentionDays?: number | null
 }
 
-export function HistoryClient({ projects }: Props) {
+export function HistoryClient({ projects: initialProjects, plan = 'free', retentionDays = 7 }: Props) {
   const [filter, setFilter] = useState<'all' | 'quick' | 'studio'>('all')
+  const [projects, setProjects] = useState<Project[]>(initialProjects)
+  // key: projectId, value: 'confirm' | 'deleting'
+  const [deleteState, setDeleteState] = useState<Record<string, 'confirm' | 'deleting'>>({})
 
   const filtered = filter === 'all' ? projects : projects.filter((p) => p.mode === filter)
+
+  const handleDeleteClick = (projectId: string) => {
+    setDeleteState((prev) => ({ ...prev, [projectId]: 'confirm' }))
+  }
+
+  const handleDeleteCancel = (projectId: string) => {
+    setDeleteState((prev) => {
+      const next = { ...prev }
+      delete next[projectId]
+      return next
+    })
+  }
+
+  const handleDeleteConfirm = async (projectId: string) => {
+    setDeleteState((prev) => ({ ...prev, [projectId]: 'deleting' }))
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.from('projects').delete().eq('id', projectId)
+      if (error) throw error
+      // 낙관적 UI 업데이트
+      setProjects((prev) => prev.filter((p) => p.id !== projectId))
+    } catch {
+      // 실패 시 confirm 상태로 롤백
+      setDeleteState((prev) => ({ ...prev, [projectId]: 'confirm' }))
+    } finally {
+      setDeleteState((prev) => {
+        const next = { ...prev }
+        delete next[projectId]
+        return next
+      })
+    }
+  }
 
   const getProductName = (p: Project): string => {
     const naming = p.generations?.find((g) => g.type === 'naming')
@@ -62,7 +100,14 @@ export function HistoryClient({ projects }: Props) {
           히스토리 <span className="italic text-stone-400">— 생성 내역</span>
         </h1>
         <p className="text-sm text-stone-500 font-sans">
-          최근 50건의 AI 생성 내역을 확인할 수 있습니다.
+          {retentionDays === null
+            ? '모든 AI 생성 내역을 확인할 수 있습니다 (무제한 보관).'
+            : `최근 ${retentionDays}일간의 AI 생성 내역입니다 · `}
+          {retentionDays !== null && (
+            <a href="/billing" className="underline hover:text-stone-700 transition-colors">
+              {plan === 'free' ? 'Starter 업그레이드 시 30일 보관' : 'Pro 업그레이드 시 무제한 보관'}
+            </a>
+          )}
         </p>
       </div>
 
@@ -170,17 +215,38 @@ export function HistoryClient({ projects }: Props) {
 
                 {/* 액션 */}
                 <div className="flex items-center gap-2">
-                  <button
-                    className="p-2 rounded-full text-stone-300 hover:text-red-400 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
-                    title="삭제"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      // TODO: 삭제 확인 모달 → Sprint 4
-                      alert('삭제 기능은 Sprint 4에서 구현됩니다.')
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {deleteState[project.id] === 'confirm' ? (
+                    // 삭제 확인 인라인 UI
+                    <div className="flex items-center gap-1.5" onClick={(e) => e.preventDefault()}>
+                      <button
+                        onClick={() => handleDeleteCancel(project.id)}
+                        className="px-3 py-1 rounded-full text-xs font-sans text-stone-500 bg-stone-100 hover:bg-stone-200 transition-colors"
+                      >
+                        취소
+                      </button>
+                      <button
+                        onClick={() => handleDeleteConfirm(project.id)}
+                        className="px-3 py-1 rounded-full text-xs font-sans font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  ) : deleteState[project.id] === 'deleting' ? (
+                    <div className="p-2">
+                      <Loader2 className="w-4 h-4 text-stone-400 animate-spin" />
+                    </div>
+                  ) : (
+                    <button
+                      className="p-2 rounded-full text-stone-300 hover:text-red-400 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
+                      title="삭제"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        handleDeleteClick(project.id)
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                   <Link
                     href={`/studio?projectId=${project.id}`}
                     className="p-2 rounded-full text-stone-400 hover:text-stone-900 hover:bg-stone-100 transition-colors"

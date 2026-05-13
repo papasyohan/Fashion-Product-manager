@@ -253,6 +253,7 @@ function StudioPageInner() {
           projectId={store.projectId}
           onSelectName={store.selectName}
           onRegenerate={() => store.reset()}
+          onSave={() => router.push('/history')}
         />
 
         {/* 크레딧 업그레이드 모달 */}
