@@ -4,6 +4,10 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { analyzeProductImage } from '@/lib/ai/analyzers/image-analyzer'
 
+// Edge Runtime — 10초 timeout 회피
+export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
 const AnalyzeSchema = z.object({
   imageUrl: z.string().url().optional(),
   imageBase64: z.string().optional(),

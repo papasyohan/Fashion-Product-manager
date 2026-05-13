@@ -1,22 +1,38 @@
 /**
- * 간편 모드 전체 파이프라인 API (I-01: ≤ 30초 목표)
- * analyze → naming + trends → tagline → description 순차 실행
+ * 텍스트 파이프라인 API — Edge Runtime + SSE 스트리밍
+ *
+ * 흐름:
+ *   1. project_create
+ *   2. analyze (vision)
+ *   3. naming (병렬: trends + naming)
+ *   4. tagline
+ *   5. description (streamObject — 토큰 단위 SSE chunk)
+ *   6. complete (크레딧 차감, project status update)
+ *
+ * 각 단계 결과/진행률은 SSE 이벤트로 즉시 클라이언트에 전달됩니다.
+ * Edge Runtime 사용 → 10초 timeout 회피, 응답이 살아있는 한 무제한 스트림 유지.
+ *
  * POST /api/generate/pipeline
+ * Content-Type: text/event-stream
  */
 
-import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { analyzeProductImage } from '@/lib/ai/analyzers/image-analyzer'
 import { generateProductNames } from '@/lib/ai/generators/naming-agent'
 import { generateTagline } from '@/lib/ai/generators/tagline-agent'
-import { generateDescription } from '@/lib/ai/generators/description-agent'
+import { streamDescription } from '@/lib/ai/generators/description-agent'
 import { fetchTrendKeywords } from '@/lib/trends/trend-fetcher'
 import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
+import type { PipelineEvent, PipelineStep } from '@/lib/ai/types'
 
-// Vercel 함수 타임아웃 60초 (Hobby 기본 10초 → 30초 목표 보장)
-export const maxDuration = 60
+// ─── 런타임 설정 ────────────────────────────────────────────────────────────
+
+export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
+// ─── 스키마 ─────────────────────────────────────────────────────────────────
 
 const PipelineSchema = z.object({
   imageUrl: z.string().url().optional(),
@@ -24,81 +40,92 @@ const PipelineSchema = z.object({
   mode: z.enum(['quick', 'studio']).default('quick'),
 })
 
-/** 단계별 실행 + 어느 단계에서 실패했는지 식별 가능한 에러 throw */
-async function runStep<T>(stepName: string, fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn()
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    const e = new Error(`[${stepName}] ${message}`)
-    // @ts-expect-error attach step name for downstream classification
-    e.step = stepName
-    throw e
-  }
+// ─── SSE 유틸 ───────────────────────────────────────────────────────────────
+
+const encoder = new TextEncoder()
+
+function sseEvent(event: PipelineEvent): Uint8Array {
+  // Server-Sent Events 표준: `data: <JSON>\n\n`
+  return encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
 }
+
+// ─── 핵심 핸들러 ────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
 
+  // ─── 사전 검증 (스트림 시작 전, 일반 JSON 응답으로 에러 처리) ───────────
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return Response.json({ error: '인증 필요' }, { status: 401 })
+  }
+
+  let parsed
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
-
     const body = await request.json()
-    const parsed = PipelineSchema.safeParse(body)
-    if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
-    }
+    parsed = PipelineSchema.safeParse(body)
+  } catch {
+    return Response.json({ error: '잘못된 요청 본문' }, { status: 400 })
+  }
+  if (!parsed.success) {
+    return Response.json({ error: parsed.error.flatten() }, { status: 400 })
+  }
 
-    const { imageUrl, imageBase64, mode } = parsed.data
+  const { imageUrl, imageBase64, mode } = parsed.data
 
-    // ─── 크레딧 가드 ─────────────────────────────────────────────────────
-    const operation = mode === 'studio' ? 'studio_text' : 'quick'
-    const guard = await checkCreditGuard({ userId: user.id, operation })
-    if (!guard.allowed) {
-      return NextResponse.json(
-        { error: guard.reason, upgradeUrl: guard.upgradeUrl, guardResult: guard },
-        { status: 402 }
-      )
-    }
-
-    // ─── 프로젝트 생성 ───────────────────────────────────────────────────
-    const project = await runStep('project_create', async () => {
-      const { data, error } = await supabase
-        .from('projects')
-        .insert({
-          user_id: user.id,
-          mode,
-          product_image_url: imageUrl ?? null,
-          status: 'processing',
-        })
-        .select('id')
-        .single()
-      if (error || !data) {
-        throw new Error(`projects insert failed: ${error?.message ?? 'no data'}`)
-      }
-      return data
-    })
-
-    const projectId = project.id
-
-    // ─── Step 1: 이미지 분석 ────────────────────────────────────────────
-    const analysis = await runStep('analyze', () =>
-      analyzeProductImage({ imageUrl, imageBase64, mode })
+  // 크레딧 가드 (DEV_BYPASS_CREDITS=true 면 자동 통과)
+  const operation = mode === 'studio' ? 'studio_text' : 'quick'
+  const guard = await checkCreditGuard({ userId: user.id, operation })
+  if (!guard.allowed) {
+    return Response.json(
+      { error: guard.reason, upgradeUrl: guard.upgradeUrl, guardResult: guard },
+      { status: 402 }
     )
+  }
 
-    await supabase.from('generations').insert({
-      project_id: projectId,
-      type: 'analyze',
-      payload: analysis as unknown as Record<string, unknown>,
-    })
+  // ─── 여기서부터 스트림 시작 ─────────────────────────────────────────────
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const emit = (event: PipelineEvent) => controller.enqueue(sseEvent(event))
+      const fail = (step: PipelineStep | undefined, err: unknown, status = 500) => {
+        const message = err instanceof Error ? err.message : String(err)
+        emit({ type: 'error', message, step, status })
+      }
 
-    // ─── Step 2: 트렌드 키워드 + 상품명 병렬 ──────────────────────────
-    const [{ keywords: trendKeywords }, namingResult] = await runStep(
-      'naming_and_trends',
-      () =>
-        Promise.all([
+      try {
+        // ── Step 1: project_create ─────────────────────────────────────────
+        emit({ type: 'progress', step: 'project_create', percent: 5 })
+        const { data: project, error: projectErr } = await supabase
+          .from('projects')
+          .insert({
+            user_id: user.id,
+            mode,
+            product_image_url: imageUrl ?? null,
+            status: 'processing',
+          })
+          .select('id')
+          .single()
+        if (projectErr || !project) {
+          fail('project_create', projectErr ?? new Error('no project'), 500)
+          return controller.close()
+        }
+        const projectId = project.id as string
+        emit({ type: 'project', projectId })
+
+        // ── Step 2: analyze ────────────────────────────────────────────────
+        emit({ type: 'progress', step: 'analyze', percent: 25 })
+        const analysis = await analyzeProductImage({ imageUrl, imageBase64, mode })
+        emit({ type: 'analysis', data: analysis })
+        await supabase.from('generations').insert({
+          project_id: projectId,
+          type: 'analyze',
+          payload: analysis as unknown as Record<string, unknown>,
+        })
+
+        // ── Step 3: trends + naming (병렬) ─────────────────────────────────
+        emit({ type: 'progress', step: 'naming', percent: 50 })
+        const [{ keywords: trendKeywords }, namingResult] = await Promise.all([
           fetchTrendKeywords({ category: analysis.category }),
           generateProductNames({
             category: analysis.category,
@@ -108,111 +135,106 @@ export async function POST(request: NextRequest) {
             platform: analysis.platform,
           }),
         ])
-    )
+        emit({
+          type: 'names',
+          data: namingResult.names,
+          trendTags: namingResult.trendTags,
+        })
+        await supabase.from('generations').insert({
+          project_id: projectId,
+          type: 'naming',
+          payload: { ...namingResult, trendKeywords } as unknown as Record<string, unknown>,
+        })
 
-    // 트렌드 반영 최종 상품명 (trendKeywords 포함 재생성은 생략 — 30초 내 완료 우선)
-    await supabase.from('generations').insert({
-      project_id: projectId,
-      type: 'naming',
-      payload: { ...namingResult, trendKeywords } as unknown as Record<string, unknown>,
-    })
+        // ── Step 4: tagline ────────────────────────────────────────────────
+        emit({ type: 'progress', step: 'tagline', percent: 70 })
+        const primaryName = namingResult.names[0]?.name ?? analysis.category
+        const taglineResult = await generateTagline({
+          productName: primaryName,
+          category: analysis.category,
+          keywords: analysis.keywords,
+          mood: analysis.mood,
+        })
+        emit({ type: 'tagline', data: taglineResult.tagline })
+        await supabase.from('generations').insert({
+          project_id: projectId,
+          type: 'tagline',
+          payload: taglineResult as unknown as Record<string, unknown>,
+        })
 
-    // ─── Step 3: 홍보문구 (첫 번째 상품명 기준) ──────────────────────
-    const primaryName = namingResult.names[0]?.name ?? analysis.category
-    const taglineResult = await runStep('tagline', () =>
-      generateTagline({
-        productName: primaryName,
-        category: analysis.category,
-        keywords: analysis.keywords,
-        mood: analysis.mood,
-      })
-    )
+        // ── Step 5: description (streamObject — 토큰 단위 SSE) ──────────────
+        emit({ type: 'progress', step: 'description', percent: 80 })
+        const descStream = streamDescription({
+          productName: primaryName,
+          tagline: taglineResult.tagline,
+          category: analysis.category,
+          keywords: analysis.keywords,
+          mode,
+          targetAudience: analysis.targetAudience,
+        })
 
-    await supabase.from('generations').insert({
-      project_id: projectId,
-      type: 'tagline',
-      payload: taglineResult as unknown as Record<string, unknown>,
-    })
+        let lastEmittedLen = 0
+        for await (const partial of descStream.partialObjectStream) {
+          const current = partial.description ?? ''
+          if (current.length > lastEmittedLen) {
+            const chunk = current.slice(lastEmittedLen)
+            lastEmittedLen = current.length
+            emit({ type: 'description_chunk', text: chunk })
+          }
+        }
 
-    // ─── Step 4: 상세 설명 ────────────────────────────────────────────
-    const descResult = await runStep('description', () =>
-      generateDescription({
-        productName: primaryName,
-        tagline: taglineResult.tagline,
-        category: analysis.category,
-        keywords: analysis.keywords,
-        mode,
-        targetAudience: analysis.targetAudience,
-      })
-    )
+        const finalDesc = await descStream.object
+        const description = finalDesc.description
+        const highlights = finalDesc.highlights ?? []
+        emit({ type: 'description_done', data: description, highlights })
 
-    await supabase.from('generations').insert({
-      project_id: projectId,
-      type: 'description',
-      payload: descResult as unknown as Record<string, unknown>,
-    })
+        await supabase.from('generations').insert({
+          project_id: projectId,
+          type: 'description',
+          payload: { description, charCount: description.length, highlights } as unknown as Record<string, unknown>,
+        })
 
-    // ─── 프로젝트 완료 ────────────────────────────────────────────────
-    await supabase
-      .from('projects')
-      .update({ status: 'done', updated_at: new Date().toISOString() })
-      .eq('id', projectId)
+        // ── 프로젝트 완료 + 크레딧 차감 ───────────────────────────────────
+        await supabase
+          .from('projects')
+          .update({ status: 'done', updated_at: new Date().toISOString() })
+          .eq('id', projectId)
 
-    // ─── 크레딧 차감 + 사용 이벤트 기록 ─────────────────────────────
-    await Promise.all([
-      deductCredits({ userId: user.id, operation }),
-      supabase.from('usage_events').insert({
-        user_id: user.id,
-        project_id: projectId,
-        event_type: mode === 'studio' ? 'studio_generated' : 'quick_generated',
-        credits_used: guard.creditsRequired ?? 1,
-        metadata: { mode, elapsedMs: Date.now() - startTime },
-      }),
-    ])
+        await Promise.all([
+          deductCredits({ userId: user.id, operation }),
+          supabase.from('usage_events').insert({
+            user_id: user.id,
+            project_id: projectId,
+            event_type: mode === 'studio' ? 'studio_generated' : 'quick_generated',
+            credits_used: guard.creditsRequired ?? 1,
+            metadata: { mode, elapsedMs: Date.now() - startTime },
+          }),
+        ])
 
-    const elapsed = Date.now() - startTime
-    console.log(`[pipeline] ${mode} mode completed in ${elapsed}ms`)
+        emit({ type: 'progress', step: 'description', percent: 100 })
+        emit({ type: 'complete', elapsedMs: Date.now() - startTime })
+        controller.close()
+      } catch (err) {
+        console.error('[/api/generate/pipeline] stream error', err)
+        const message = err instanceof Error ? err.message : String(err)
+        let userMessage = message
+        if (/credit|credit_balance|insufficient/i.test(message)) {
+          userMessage = 'AI API 크레딧이 부족합니다. 잔액을 확인해주세요.'
+        } else if (/401|unauthorized|invalid.*api.*key/i.test(message)) {
+          userMessage = 'AI API 키가 유효하지 않습니다.'
+        }
+        emit({ type: 'error', message: userMessage })
+        controller.close()
+      }
+    },
+  })
 
-    return NextResponse.json({
-      projectId,
-      analysis,
-      names: namingResult.names,
-      trendTags: namingResult.trendTags,
-      tagline: taglineResult.tagline,
-      description: descResult.description,
-      highlights: descResult.highlights,
-      elapsedMs: elapsed,
-    })
-  } catch (err) {
-    const elapsed = Date.now() - startTime
-    const message = err instanceof Error ? err.message : String(err)
-    // @ts-expect-error step name is attached by runStep
-    const step: string | undefined = err?.step
-
-    console.error('[/api/generate/pipeline]', { step, message, elapsed })
-
-    // 에러 분류 → 사용자 메시지
-    let userMessage = `AI 생성 실패 (${step ?? 'unknown'}): ${message}`
-    let status = 500
-
-    if (/credit|credit_balance|insufficient/i.test(message)) {
-      userMessage = 'Anthropic API 크레딧이 부족합니다. console.anthropic.com에서 충전해주세요.'
-      status = 503
-    } else if (/401|unauthorized|invalid.*api.*key|x-api-key/i.test(message)) {
-      userMessage = 'Anthropic API 키가 유효하지 않습니다. 환경변수 확인이 필요합니다.'
-      status = 503
-    } else if (/timeout|aborted|FUNCTION_INVOCATION_TIMEOUT/i.test(message)) {
-      userMessage = 'AI 응답이 너무 오래 걸립니다 (60초 초과). 잠시 후 재시도해주세요.'
-      status = 504
-    } else if (/JSON|parse/i.test(message) && step === 'analyze') {
-      userMessage = 'AI 응답 파싱 실패. 다른 이미지로 재시도해주세요.'
-    } else if (step === 'project_create') {
-      userMessage = `DB 저장 실패: ${message}. 회원 프로필을 확인해주세요.`
-    }
-
-    return NextResponse.json(
-      { error: userMessage, step, debug: message, elapsedMs: elapsed },
-      { status }
-    )
-  }
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no', // Nginx/프록시 버퍼링 방지
+    },
+  })
 }

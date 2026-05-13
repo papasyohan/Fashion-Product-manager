@@ -1,8 +1,11 @@
 /**
- * 상품명 생성 래퍼 (T-03)
+ * 상품명 생성 (T-03) — AI SDK + 라우터 기반
+ * 작업별 모델 env: MODEL_NAMING
  */
 
-import { callClaude, parseJsonResponse } from '@/lib/ai/client'
+import { generateObject } from 'ai'
+import { runWithFallback } from '@/lib/ai/router'
+import { NamingSchema } from '@/lib/ai/types'
 import { NAMING_SYSTEM_PROMPT, buildNamingPrompt } from '@/lib/prompts/naming'
 
 export interface NamingResult {
@@ -18,17 +21,25 @@ export async function generateProductNames(params: {
   platform?: string
   forbiddenTerms?: string[]
 }): Promise<NamingResult> {
-  const raw = await callClaude({
-    systemPrompt: NAMING_SYSTEM_PROMPT,
-    userPrompt: buildNamingPrompt(params),
-    maxTokens: 512,
-  })
-
-  const parsed = parseJsonResponse<{ names: Array<{ name: string; trend: string }> }>(raw)
+  const result = await runWithFallback('naming', (model) =>
+    generateObject({
+      model,
+      schema: NamingSchema,
+      system: NAMING_SYSTEM_PROMPT,
+      prompt: buildNamingPrompt(params),
+      maxOutputTokens: 512,
+    })
+  )
 
   // 금칙어 필터링
-  const forbidden = params.forbiddenTerms ?? ['치료', '완치', '의학적으로 증명', '세계 최고', '국내 유일']
-  const filteredNames = parsed.names.map((item) => ({
+  const forbidden = params.forbiddenTerms ?? [
+    '치료',
+    '완치',
+    '의학적으로 증명',
+    '세계 최고',
+    '국내 유일',
+  ]
+  const filteredNames = result.object.names.map((item) => ({
     ...item,
     name: filterForbiddenTerms(item.name, forbidden),
   }))
@@ -37,7 +48,7 @@ export async function generateProductNames(params: {
   const allTags = filteredNames
     .flatMap((n) => n.trend.split(' '))
     .filter((t) => t.startsWith('#'))
-    .filter((t, i, arr) => arr.indexOf(t) === i) // 중복 제거
+    .filter((t, i, arr) => arr.indexOf(t) === i)
 
   return { names: filteredNames, trendTags: allTags }
 }

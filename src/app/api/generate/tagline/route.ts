@@ -4,6 +4,9 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { generateTagline } from '@/lib/ai/generators/tagline-agent'
 
+export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
 const TaglineSchema = z.object({
   productName: z.string().min(1),
   category: z.string().min(1),

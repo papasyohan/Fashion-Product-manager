@@ -1,8 +1,11 @@
 /**
- * 한줄 홍보문구 생성 래퍼 (T-04)
+ * 한줄 홍보문구 생성 (T-04) — AI SDK + 라우터 기반
+ * 작업별 모델 env: MODEL_TAGLINE
  */
 
-import { callClaude, parseJsonResponse } from '@/lib/ai/client'
+import { generateObject } from 'ai'
+import { runWithFallback } from '@/lib/ai/router'
+import { TaglineSchema } from '@/lib/ai/types'
 import { TAGLINE_SYSTEM_PROMPT, buildTaglinePrompt } from '@/lib/prompts/tagline'
 
 export interface TaglineResult {
@@ -18,34 +21,26 @@ export async function generateTagline(params: {
   keywords: string[]
   mood?: string
 }): Promise<TaglineResult> {
-  const raw = await callClaude({
-    systemPrompt: TAGLINE_SYSTEM_PROMPT,
-    userPrompt: buildTaglinePrompt(params),
-    maxTokens: 256,
-  })
-
-  const parsed = parseJsonResponse<{
-    tagline: string
-    charCount: number
-    seoKeywords: string[]
-  }>(raw)
-
-  // 35자 초과 시 자동 트림
-  let tagline = parsed.tagline
-  if (tagline.length > 35) {
-    tagline = tagline.slice(0, 35)
-  }
-
-  // SEO 점수 계산 (키워드 포함 여부 기반 간단 점수)
-  const matchedKeywords = params.keywords.filter((kw) =>
-    tagline.includes(kw)
+  const result = await runWithFallback('tagline', (model) =>
+    generateObject({
+      model,
+      schema: TaglineSchema,
+      system: TAGLINE_SYSTEM_PROMPT,
+      prompt: buildTaglinePrompt(params),
+      maxOutputTokens: 256,
+    })
   )
+
+  let tagline = result.object.tagline
+  if (tagline.length > 35) tagline = tagline.slice(0, 35)
+
+  const matchedKeywords = params.keywords.filter((kw) => tagline.includes(kw))
   const seoScore = Math.min(100, matchedKeywords.length * 20 + 40)
 
   return {
     tagline,
     charCount: tagline.length,
     seoScore,
-    seoKeywords: parsed.seoKeywords ?? [],
+    seoKeywords: result.object.seoKeywords ?? [],
   }
 }

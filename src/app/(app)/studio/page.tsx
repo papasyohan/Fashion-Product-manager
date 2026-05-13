@@ -17,6 +17,7 @@ import {
   type GenerationResult,
 } from '@/store/studio'
 import type { CreditGuardResult } from '@/lib/credit-guard'
+import { consumePipelineSSE } from '@/lib/ai/sse-client'
 
 // ─── 진행률 매핑 ─────────────────────────────────────────────────────────
 
@@ -126,25 +127,31 @@ function StudioPageInner() {
     [store.mode]
   )
 
-  // ─── 파이프라인 실행 ────────────────────────────────────────────────────
+  // ─── 파이프라인 실행 (SSE 스트리밍) ─────────────────────────────────────
   const runPipeline = async (imageUrl: string, base64: string, mode: StudioMode) => {
     store.setStatus('analyzing', STATUS_PROGRESS.analyzing)
 
+    // SSE 누적 상태
+    let projectId: string | null = null
+    let analysis: GenerationResult['features'] extends infer _ ? Record<string, unknown> | null : never
+    analysis = null
+    let names: GenerationResult['names'] = []
+    let tagline = ''
+    let descriptionBuffer = ''
+    let highlights: string[] = []
+    let analysisData: { category?: string; keywords?: string[]; keyFeatures?: string[]; targetAudience?: string } = {}
+
     try {
-      // ── Step 1~4: 텍스트 파이프라인 ──────────────────────────────────
       const res = await fetch('/api/generate/pipeline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageUrl, imageBase64: base64, mode }),
       })
 
-      store.setStatus('generating_names', STATUS_PROGRESS.generating_names)
-
-      // 402 → 크레딧/플랜 부족 → 업그레이드 모달 (#4)
+      // 402 / 4xx → JSON 응답 (스트림 시작 전 차단)
       if (res.status === 402) {
         const err = await res.json()
         const gr = err.guardResult as CreditGuardResult
-        // reset() 대신 status만 idle로 — 모드/이미지 선택 유지하여 모달 닫아도 처음부터 다시 시작 안 함
         store.setStatus('idle', 0)
         setGuardModal({
           open: true,
@@ -153,31 +160,72 @@ function StudioPageInner() {
         })
         return
       }
-
       if (!res.ok) {
-        const err = await res.json()
-        const stepInfo  = err.step  ? ` [step: ${err.step}]` : ''
-        const debugInfo = err.debug && err.debug !== err.error ? ` (${err.debug})` : ''
-        throw new Error(`${err.error ?? 'AI 생성 실패'}${stepInfo}${debugInfo}`)
+        const err = await res.json().catch(() => ({ error: 'AI 생성 실패' }))
+        throw new Error(err.error ?? `HTTP ${res.status}`)
       }
 
-      store.setStatus('generating_tagline', STATUS_PROGRESS.generating_tagline)
-      const data = await res.json()
-      store.setStatus('generating_description', STATUS_PROGRESS.generating_description)
-      store.setProjectId(data.projectId)
+      // ── SSE 이벤트 소비 ──────────────────────────────────────────────
+      await consumePipelineSSE(res, (event) => {
+        switch (event.type) {
+          case 'progress': {
+            // step → 클라이언트 상태 매핑
+            const stepStatusMap = {
+              project_create: 'uploading',
+              analyze:        'analyzing',
+              naming:         'generating_names',
+              tagline:        'generating_tagline',
+              description:    'generating_description',
+            } as const
+            const newStatus = stepStatusMap[event.step] ?? 'analyzing'
+            store.setStatus(newStatus, event.percent)
+            return
+          }
+          case 'project':
+            projectId = event.projectId
+            store.setProjectId(event.projectId)
+            return
+          case 'analysis':
+            analysisData = event.data
+            return
+          case 'names':
+            names = event.data
+            return
+          case 'tagline':
+            tagline = event.data
+            return
+          case 'description_chunk':
+            descriptionBuffer += event.text
+            // 부분 description 미리보기 — store에 progressive write
+            store.setStatus('generating_description', Math.min(95, store.progress + 1))
+            return
+          case 'description_done':
+            descriptionBuffer = event.data
+            highlights = event.highlights
+            return
+          case 'error':
+            throw new Error(event.message)
+          case 'complete':
+            // 본문 break — 아래에서 후처리
+            return
+        }
+      })
 
-      // ── 기본 결과 조립 ────────────────────────────────────────────────
+      if (!projectId) throw new Error('projectId가 스트림에서 전달되지 않았습니다.')
+
+      // ── 기본 결과 조립 ───────────────────────────────────────────────
       const result: GenerationResult = {
-        names:       data.names,
-        tagline:     data.tagline,
-        description: data.description,
+        names,
+        tagline,
+        description: descriptionBuffer,
         selectedNameIndex: 0,
-        category: data.analysis?.category,
-        keywords: data.analysis?.keywords,
-        features: data.analysis?.keyFeatures,
+        category: analysisData.category,
+        keywords: analysisData.keywords,
+        features: analysisData.keyFeatures,
       }
+      void highlights // 현재 미사용 (추후 상세페이지 조립 시 활용)
 
-      // ── Step 5: 스튜디오 모드 썸네일 자동 생성 (#2) ──────────────────
+      // ── 스튜디오 모드 썸네일 (별도 비-스트리밍 호출) ───────────────
       if (mode === 'studio') {
         store.setStatus('generating_thumbnails', STATUS_PROGRESS.generating_thumbnails)
         try {
@@ -185,43 +233,38 @@ function StudioPageInner() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              projectId:   data.projectId,
+              projectId,
               imageBase64: base64,
               imageUrl,
-              analysis:    data.analysis,
+              analysis: analysisData,
               aspectRatios: ['1:1', '4:5', '9:16', '16:9'],
-              count:       1,
-              resolution:  '2K',
+              count: 1,
+              resolution: '2K',
             }),
           })
-
           if (thumbRes.ok) {
             const thumbData = await thumbRes.json()
             const thumbs = (thumbData.thumbnails ?? []) as Array<{
               url: string; width: number; height: number; aspect_ratio: string
             }>
             result.thumbnails = thumbs.map((t) => ({
-              ratio:  t.aspect_ratio,
-              label:  t.aspect_ratio,
-              size:   `${t.width}×${t.height}`,
-              url:    t.url,
-              width:  t.width,
+              ratio: t.aspect_ratio,
+              label: t.aspect_ratio,
+              size: `${t.width}×${t.height}`,
+              url: t.url,
+              width: t.width,
               height: t.height,
             }))
             result.primaryThumbnailUrl = thumbs[0]?.url
           } else if (thumbRes.status === 402) {
-            // 썸네일 크레딧 부족 — 텍스트 결과는 표시 유지
             console.warn('[pipeline] thumbnail credit guard — showing text results only')
           }
         } catch (thumbErr) {
-          // 썸네일 실패는 non-fatal
           console.warn('[pipeline] thumbnail failed, showing text results:', thumbErr)
         }
       }
 
       store.setResult(result)
-
-      // 크레딧 갱신
       setCreditsLeft((prev) => Math.max(prev - 1, 0))
     } catch (err) {
       const message = err instanceof Error ? err.message : '알 수 없는 오류'

@@ -4,6 +4,9 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { generateDescription } from '@/lib/ai/generators/description-agent'
 
+export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
 const DescriptionSchema = z.object({
   productName: z.string().min(1),
   tagline: z.string().min(1),

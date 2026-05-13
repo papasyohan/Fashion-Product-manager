@@ -5,6 +5,9 @@ import { createClient } from '@/lib/supabase/server'
 import { generateProductNames } from '@/lib/ai/generators/naming-agent'
 import { fetchTrendKeywords } from '@/lib/trends/trend-fetcher'
 
+export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
 const NamingSchema = z.object({
   category: z.string().min(1),
   keywords: z.array(z.string()).default([]),
