@@ -30,7 +30,6 @@ interface Props {
 export function HistoryClient({ projects: initialProjects, plan = 'free', retentionDays = 7 }: Props) {
   const [filter, setFilter] = useState<'all' | 'quick' | 'studio'>('all')
   const [projects, setProjects] = useState<Project[]>(initialProjects)
-  // key: projectId, value: 'confirm' | 'deleting'
   const [deleteState, setDeleteState] = useState<Record<string, 'confirm' | 'deleting'>>({})
 
   const filtered = filter === 'all' ? projects : projects.filter((p) => p.mode === filter)
@@ -53,10 +52,8 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
       const supabase = createClient()
       const { error } = await supabase.from('projects').delete().eq('id', projectId)
       if (error) throw error
-      // 낙관적 UI 업데이트
       setProjects((prev) => prev.filter((p) => p.id !== projectId))
     } catch {
-      // 실패 시 confirm 상태로 롤백
       setDeleteState((prev) => ({ ...prev, [projectId]: 'confirm' }))
     } finally {
       setDeleteState((prev) => {
@@ -90,21 +87,19 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
   }
 
   return (
-    <div
-      className="max-w-5xl mx-auto px-6 py-10"
-      style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}
-    >
+    <div className="max-w-5xl mx-auto px-6 py-10">
       {/* 헤더 */}
       <div className="mb-8">
-        <h1 className="text-4xl tracking-tight mb-2">
-          히스토리 <span className="italic text-stone-400">— 생성 내역</span>
+        <h1 className="text-[28px] font-black text-[#111111] mb-2">
+          히스토리
+          <span className="text-[#9e9ea0] font-medium text-[18px] ml-3">— 생성 내역</span>
         </h1>
-        <p className="text-sm text-stone-500 font-sans">
+        <p className="text-[13px] text-[#707072]">
           {retentionDays === null
             ? '모든 AI 생성 내역을 확인할 수 있습니다 (무제한 보관).'
             : `최근 ${retentionDays}일간의 AI 생성 내역입니다 · `}
           {retentionDays !== null && (
-            <a href="/billing" className="underline hover:text-stone-700 transition-colors">
+            <a href="/billing" className="underline hover:text-[#111111] transition-colors">
               {plan === 'free' ? 'Starter 업그레이드 시 30일 보관' : 'Pro 업그레이드 시 무제한 보관'}
             </a>
           )}
@@ -117,16 +112,16 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-4 py-1.5 rounded-full text-sm font-sans transition-colors ${
-              filter === f
-                ? 'bg-stone-900 text-white'
-                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-            }`}
+            className="px-4 py-1.5 rounded-full text-[13px] font-semibold transition-colors"
+            style={{
+              backgroundColor: filter === f ? '#111111' : '#f5f5f5',
+              color: filter === f ? '#ffffff' : '#707072',
+            }}
           >
             {f === 'all' ? '전체' : f === 'quick' ? '간편 모드' : '스튜디오 모드'}
           </button>
         ))}
-        <span className="ml-auto text-xs font-sans text-stone-400">
+        <span className="ml-auto text-[12px] text-[#9e9ea0]">
           {filtered.length}건
         </span>
       </div>
@@ -134,35 +129,38 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
       {/* 목록 */}
       {filtered.length === 0 ? (
         <div className="text-center py-20">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-stone-100 flex items-center justify-center mb-4">
-            <Clock className="w-8 h-8 text-stone-400" />
+          <div
+            className="w-16 h-16 mx-auto flex items-center justify-center mb-4"
+            style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }}
+          >
+            <Clock className="w-8 h-8 text-[#9e9ea0]" />
           </div>
-          <p className="text-stone-500 font-sans">생성 내역이 없습니다.</p>
+          <p className="text-[13px] text-[#9e9ea0]">생성 내역이 없습니다.</p>
           <Link
             href="/studio"
-            className="mt-4 inline-block text-sm font-sans font-semibold text-stone-900 hover:underline"
+            className="mt-4 inline-block text-[13px] font-bold text-[#111111] hover:underline"
           >
             스튜디오로 이동 →
           </Link>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {filtered.map((project) => {
             const productName = getProductName(project)
             const tagline = getTagline(project)
             const ModeIcon = project.mode === 'quick' ? Zap : Wand2
-            const modeColor =
-              project.mode === 'quick'
-                ? 'text-amber-600 bg-amber-50'
-                : 'text-violet-600 bg-violet-50'
 
             return (
               <div
                 key={project.id}
-                className="group rounded-2xl border border-stone-200 bg-white p-5 hover:border-stone-400 hover:shadow-sm transition-all flex items-center gap-4"
+                className="group flex items-center gap-4 p-5 hover:bg-[#f5f5f5] transition-colors"
+                style={{ border: '1px solid #e5e5e5', backgroundColor: '#ffffff' }}
               >
                 {/* 썸네일 */}
-                <div className="w-16 h-16 rounded-xl overflow-hidden bg-stone-100 flex-shrink-0">
+                <div
+                  className="w-16 h-16 overflow-hidden flex-shrink-0"
+                  style={{ border: '1px solid #e5e5e5', backgroundColor: '#f5f5f5' }}
+                >
                   {project.product_image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -172,7 +170,7 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <ImageOff className="w-5 h-5 text-stone-300" />
+                      <ImageOff className="w-5 h-5 text-[#9e9ea0]" />
                     </div>
                   )}
                 </div>
@@ -180,20 +178,27 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
                 {/* 내용 */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
+                    {/* 모드 태그 */}
                     <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-sans font-semibold ${modeColor}`}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest"
+                      style={{ backgroundColor: '#111111', color: '#ffffff' }}
                     >
                       <ModeIcon className="w-3 h-3" />
                       {project.mode === 'quick' ? '간편' : '스튜디오'}
                     </span>
+                    {/* 상태 태그 */}
                     <span
-                      className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-sans ${
-                        project.status === 'done'
-                          ? 'text-green-700 bg-green-50'
-                          : project.status === 'processing'
-                          ? 'text-yellow-700 bg-yellow-50'
-                          : 'text-red-600 bg-red-50'
-                      }`}
+                      className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                      style={{
+                        backgroundColor:
+                          project.status === 'done' ? '#f0faf6'
+                          : project.status === 'processing' ? '#fffbeb'
+                          : '#fff5f5',
+                        color:
+                          project.status === 'done' ? '#007d48'
+                          : project.status === 'processing' ? '#b45309'
+                          : '#d30005',
+                      }}
                     >
                       {project.status === 'done'
                         ? '완료'
@@ -202,13 +207,13 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
                         : '오류'}
                     </span>
                   </div>
-                  <p className="text-lg tracking-tight truncate">{productName}</p>
+                  <p className="text-[15px] font-bold text-[#111111] truncate">{productName}</p>
                   {tagline && (
-                    <p className="text-xs font-sans text-stone-500 truncate mt-0.5">
+                    <p className="text-[12px] text-[#707072] truncate mt-0.5">
                       &ldquo;{tagline}&rdquo;
                     </p>
                   )}
-                  <p className="text-[10px] font-sans text-stone-400 mt-1">
+                  <p className="text-[11px] text-[#9e9ea0] mt-1">
                     {formatDate(project.created_at)}
                   </p>
                 </div>
@@ -216,28 +221,29 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
                 {/* 액션 */}
                 <div className="flex items-center gap-2">
                   {deleteState[project.id] === 'confirm' ? (
-                    // 삭제 확인 인라인 UI
                     <div className="flex items-center gap-1.5" onClick={(e) => e.preventDefault()}>
                       <button
                         onClick={() => handleDeleteCancel(project.id)}
-                        className="px-3 py-1 rounded-full text-xs font-sans text-stone-500 bg-stone-100 hover:bg-stone-200 transition-colors"
+                        className="px-3 py-1 rounded-full text-[12px] font-semibold text-[#707072] hover:text-[#111111] transition-colors"
+                        style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }}
                       >
                         취소
                       </button>
                       <button
                         onClick={() => handleDeleteConfirm(project.id)}
-                        className="px-3 py-1 rounded-full text-xs font-sans font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+                        className="px-3 py-1 rounded-full text-[12px] font-semibold text-white transition-colors"
+                        style={{ backgroundColor: '#d30005' }}
                       >
                         삭제
                       </button>
                     </div>
                   ) : deleteState[project.id] === 'deleting' ? (
                     <div className="p-2">
-                      <Loader2 className="w-4 h-4 text-stone-400 animate-spin" />
+                      <Loader2 className="w-4 h-4 text-[#9e9ea0] animate-spin" />
                     </div>
                   ) : (
                     <button
-                      className="p-2 rounded-full text-stone-300 hover:text-red-400 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
+                      className="p-2 rounded-full text-[#9e9ea0] hover:text-[#d30005] hover:bg-[#fff5f5] transition-colors opacity-0 group-hover:opacity-100"
                       title="삭제"
                       onClick={(e) => {
                         e.preventDefault()
@@ -249,7 +255,7 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
                   )}
                   <Link
                     href={`/studio?projectId=${project.id}`}
-                    className="p-2 rounded-full text-stone-400 hover:text-stone-900 hover:bg-stone-100 transition-colors"
+                    className="p-2 rounded-full text-[#9e9ea0] hover:text-[#111111] hover:bg-[#f5f5f5] transition-colors"
                     title="다시 열기"
                   >
                     <ChevronRight className="w-5 h-5" />

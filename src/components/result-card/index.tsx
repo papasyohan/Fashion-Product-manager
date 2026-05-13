@@ -2,10 +2,7 @@
 
 import { useState } from 'react'
 import { Check, Copy, Share2, MessageSquare, FileCode2, Download, Loader2, ExternalLink } from 'lucide-react'
-import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { ShareSheet } from '@/components/share-sheet'
 import { ThumbnailGrid, type ThumbnailItem } from '@/components/thumbnail-grid'
 import type { GenerationResult } from '@/store/studio'
@@ -77,7 +74,6 @@ export function ResultCard({
     }
   }
 
-  // 상세페이지 HTML 다운로드
   const handleDownloadDetailPage = () => {
     if (!detailPageHtml) return
     const blob = new Blob([detailPageHtml], { type: 'text/html;charset=utf-8' })
@@ -92,7 +88,6 @@ export function ResultCard({
     URL.revokeObjectURL(url)
   }
 
-  // 새 창 미리보기
   const handlePreviewDetailPage = () => {
     if (!detailPageHtml) return
     const win = window.open('', '_blank', 'noopener,noreferrer')
@@ -103,15 +98,14 @@ export function ResultCard({
   }
 
   return (
-    <div
-      className="max-w-5xl mx-auto px-6 py-10"
-      style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}
-    >
+    <div className="max-w-5xl mx-auto px-6 py-10">
+      {/* 헤더 */}
       <div className="mb-8">
-        <h1 className="text-4xl tracking-tight mb-2">
-          생성 완료 <span className="italic text-stone-500">— 미리보기</span>
+        <h1 className="text-[28px] font-black text-[#111111] mb-2">
+          생성 완료
+          <span className="text-[#9e9ea0] font-medium text-[20px] ml-3">— 미리보기</span>
         </h1>
-        <p className="text-sm text-stone-500 font-sans">
+        <p className="text-[13px] text-[#707072]">
           아래 결과는 스마트스토어·쿠팡에 바로 복사해 사용할 수 있습니다.
         </p>
       </div>
@@ -119,29 +113,33 @@ export function ResultCard({
       {/* 01: 상품명 3종 */}
       <section className="mb-8">
         <SectionHeader number="01" title="상품명 3종" subtitle="트렌드 반영" />
-        <div className="grid md:grid-cols-3 gap-3">
+        <div
+          className="grid md:grid-cols-3"
+          style={{ border: '1px solid #e5e5e5' }}
+        >
           {result.names.map((n, i) => (
-            <Card
+            <button
               key={i}
               onClick={() => onSelectName(i)}
               data-testid="product-name-card"
-              className={`rounded-2xl border-2 bg-white p-5 cursor-pointer transition-all hover:shadow-md ${
-                result.selectedNameIndex === i
-                  ? 'border-stone-900 shadow-md'
-                  : 'border-stone-200 hover:border-stone-400'
-              }`}
+              className="text-left p-5 transition-colors hover:bg-[#f5f5f5]"
+              style={{
+                backgroundColor: result.selectedNameIndex === i ? '#f5f5f5' : '#ffffff',
+                borderRight: i < result.names.length - 1 ? '1px solid #e5e5e5' : undefined,
+                borderTop: result.selectedNameIndex === i ? '3px solid #111111' : '3px solid transparent',
+              }}
             >
-              <div className="text-[11px] font-sans text-stone-400 mb-1">
+              <div className="text-[11px] font-semibold text-[#9e9ea0] uppercase tracking-widest mb-1.5 flex items-center gap-2">
                 Option {i + 1}
                 {result.selectedNameIndex === i && (
-                  <Badge className="ml-2 bg-stone-900 text-white text-[10px] px-1.5 py-0">
+                  <span className="px-1.5 py-0.5 bg-[#111111] text-white text-[9px] font-black tracking-widest">
                     선택됨
-                  </Badge>
+                  </span>
                 )}
               </div>
-              <div className="text-xl mb-3 leading-snug">{n.name}</div>
-              <div className="text-xs font-sans text-stone-500">{n.trend}</div>
-            </Card>
+              <div className="text-[18px] font-bold text-[#111111] mb-2 leading-snug">{n.name}</div>
+              <div className="text-[12px] text-[#707072]">{n.trend}</div>
+            </button>
           ))}
         </div>
       </section>
@@ -149,20 +147,23 @@ export function ResultCard({
       {/* 02: 한줄 홍보문구 */}
       <section className="mb-8">
         <SectionHeader number="02" title="한줄 홍보문구" subtitle="35자 이내" />
-        <div className="rounded-2xl bg-gradient-to-br from-amber-50 via-orange-50 to-pink-50 border border-amber-200 p-8 relative group">
-          <p className="text-3xl leading-tight tracking-tight">
+        <div
+          className="p-8 relative group"
+          style={{ backgroundColor: '#111111' }}
+        >
+          <p className="text-[28px] font-black text-white leading-tight tracking-tight">
             &ldquo;{result.tagline}&rdquo;
           </p>
           <div className="mt-4 flex items-center justify-between">
-            <span className="text-xs font-sans text-stone-500">
+            <span className="text-[12px] text-[#9e9ea0]">
               {result.tagline.length}자 · 검색 노출 최적화됨
             </span>
             <button
               onClick={() => copyToClipboard(result.tagline, 'tagline')}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-amber-100 text-stone-500"
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-[#1c1c1c] text-[#9e9ea0] hover:text-white"
             >
               {copiedField === 'tagline' ? (
-                <Check className="w-4 h-4 text-green-500" />
+                <Check className="w-4 h-4" style={{ color: '#007d48' }} />
               ) : (
                 <Copy className="w-4 h-4" />
               )}
@@ -174,27 +175,30 @@ export function ResultCard({
       {/* 03: 상세 설명 */}
       <section className="mb-8">
         <SectionHeader number="03" title="상세 설명" />
-        <Card className="rounded-2xl border border-stone-200 bg-white p-6 relative group">
-          <pre className="font-sans text-sm text-stone-700 leading-relaxed whitespace-pre-wrap">
+        <div
+          className="p-6 relative group"
+          style={{ border: '1px solid #e5e5e5', backgroundColor: '#ffffff' }}
+        >
+          <pre className="text-[13px] text-[#111111] leading-relaxed whitespace-pre-wrap">
             {result.description}
           </pre>
           <button
             onClick={() => copyToClipboard(result.description, 'description')}
-            className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-stone-100 text-stone-500"
+            className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-[#f5f5f5] text-[#9e9ea0] hover:text-[#111111]"
           >
             {copiedField === 'description' ? (
-              <Check className="w-4 h-4 text-green-500" />
+              <Check className="w-4 h-4" style={{ color: '#007d48' }} />
             ) : (
               <Copy className="w-4 h-4" />
             )}
           </button>
-        </Card>
+        </div>
       </section>
 
       {/* 스튜디오 모드 전용: 썸네일 */}
       {mode === 'studio' && result.thumbnails && result.thumbnails.length > 0 && (
         <section className="mb-8">
-          <SectionHeader number="04" title="썸네일" subtitle="Nano Banana 2" color="violet" />
+          <SectionHeader number="04" title="썸네일" subtitle="Nano Banana 2" />
           <ThumbnailGrid
             thumbnails={result.thumbnails
               .filter((t): t is typeof t & { url: string } => !!t.url)
@@ -205,7 +209,6 @@ export function ResultCard({
                 aspectRatio: t.ratio,
               }))}
             onSelectPrimary={(thumb) => {
-              // primary URL은 result에 이미 설정돼 있음 — 재선택 시 별도 처리 불필요
               void thumb
             }}
           />
@@ -215,20 +218,26 @@ export function ResultCard({
       {/* 스튜디오 모드 전용: 상세페이지 HTML */}
       {mode === 'studio' && (
         <section className="mb-8">
-          <SectionHeader number="05" title="상세페이지 HTML" subtitle="Pro+ 내보내기" color="violet" />
+          <SectionHeader number="05" title="상세페이지 HTML" subtitle="Pro+ 내보내기" />
           {!detailPageHtml ? (
-            <Card className="rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50/50 p-8 text-center">
-              <div className="w-12 h-12 mx-auto rounded-2xl bg-violet-600 flex items-center justify-center mb-4">
+            <div
+              className="p-8 text-center"
+              style={{ border: '2px dashed #e5e5e5', backgroundColor: '#f5f5f5' }}
+            >
+              <div
+                className="w-12 h-12 mx-auto flex items-center justify-center mb-4"
+                style={{ backgroundColor: '#111111' }}
+              >
                 <FileCode2 className="w-6 h-6 text-white" />
               </div>
-              <p className="text-lg mb-1">상품 상세페이지 자동 조립</p>
-              <p className="text-sm font-sans text-stone-500 mb-5">
+              <p className="text-[15px] font-semibold text-[#111111] mb-1">상품 상세페이지 자동 조립</p>
+              <p className="text-[13px] text-[#707072] mb-5">
                 Hero · 핵심 특징 · 상품 소개 · 키워드 · 리뷰 플레이스홀더까지 한 번에
               </p>
               <Button
                 onClick={handleGenerateDetailPage}
                 disabled={generatingDetail}
-                className="rounded-full bg-violet-600 text-white font-sans text-sm font-semibold hover:bg-violet-700 px-6"
+                className="rounded-full bg-[#111111] text-white text-[13px] font-semibold hover:bg-[#333333] px-6"
               >
                 {generatingDetail ? (
                   <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> 조립 중...</>
@@ -237,38 +246,39 @@ export function ResultCard({
                 )}
               </Button>
               {detailError && (
-                <p className="mt-3 text-xs font-sans text-red-600">{detailError}</p>
+                <p className="mt-3 text-[12px]" style={{ color: '#d30005' }}>{detailError}</p>
               )}
-            </Card>
+            </div>
           ) : (
-            <Card className="rounded-2xl border border-violet-200 bg-white overflow-hidden">
+            <div style={{ border: '1px solid #e5e5e5', backgroundColor: '#ffffff', overflow: 'hidden' }}>
               <iframe
                 title="상세페이지 미리보기"
                 srcDoc={detailPageHtml}
                 sandbox="allow-same-origin"
-                className="w-full h-[420px] bg-white border-b border-stone-100"
+                className="w-full h-[420px] bg-white"
+                style={{ borderBottom: '1px solid #e5e5e5' }}
               />
-              <div className="flex items-center justify-between p-4 bg-violet-50/40">
-                <span className="text-xs font-sans text-stone-500">
+              <div className="flex items-center justify-between p-4" style={{ backgroundColor: '#f5f5f5' }}>
+                <span className="text-[12px] text-[#707072]">
                   상세페이지 HTML이 준비되었습니다 · {Math.round(detailPageHtml.length / 1024)}KB
                 </span>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     onClick={handlePreviewDetailPage}
-                    className="rounded-full font-sans text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
+                    className="rounded-full text-[12px] border-[#cacacb] text-[#111111] hover:border-[#111111]"
                   >
                     <ExternalLink className="w-3.5 h-3.5 mr-1" /> 새 창 열기
                   </Button>
                   <Button
                     onClick={handleDownloadDetailPage}
-                    className="rounded-full bg-violet-600 text-white font-sans text-xs font-semibold hover:bg-violet-700"
+                    className="rounded-full bg-[#111111] text-white text-[12px] font-semibold hover:bg-[#333333]"
                   >
                     <Download className="w-3.5 h-3.5 mr-1" /> HTML 다운로드
                   </Button>
                 </div>
               </div>
-            </Card>
+            </div>
           )}
         </section>
       )}
@@ -276,19 +286,23 @@ export function ResultCard({
       {/* 스튜디오 모드 전용: 공유 */}
       {mode === 'studio' && (
         <section className="mb-8">
-          <SectionHeader number="06" title="공유하기" color="violet" />
-          <div className="grid grid-cols-3 gap-3">
+          <SectionHeader number="06" title="공유하기" />
+          <div
+            className="grid grid-cols-3"
+            style={{ border: '1px solid #e5e5e5' }}
+          >
             <ShareButton
               icon={<MessageSquare className="w-5 h-5" />}
               label="SMS"
+              borderRight
               onClick={() => setShareOpen(true)}
             />
             <ShareButton
               icon={
-                <div className="w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center text-xs font-bold text-stone-900">K</div>
+                <div className="w-6 h-6 rounded-full bg-[#f5c430] flex items-center justify-center text-[11px] font-black text-[#111111]">K</div>
               }
               label="카카오톡"
-              className="border-yellow-300 bg-yellow-50 hover:border-yellow-500"
+              borderRight
               onClick={() => setShareOpen(true)}
             />
             <ShareButton
@@ -313,25 +327,28 @@ export function ResultCard({
 
       {/* SynthID 고지 */}
       {mode === 'studio' && (
-        <div className="mb-6 p-3 rounded-xl bg-stone-100 text-[11px] font-sans text-stone-500 leading-relaxed">
-          <strong className="text-stone-700">고지:</strong> 스튜디오 모드로 생성된
+        <div
+          className="mb-6 p-3 text-[11px] text-[#707072] leading-relaxed"
+          style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }}
+        >
+          <strong className="text-[#111111]">고지:</strong> 스튜디오 모드로 생성된
           이미지는 Google SynthID 워터마크를 포함하며, AI 생성 콘텐츠임을 식별할 수 있습니다.
         </div>
       )}
 
-      <Separator className="mb-6" />
+      <div className="h-px bg-[#e5e5e5] mb-6" />
 
       <div className="flex justify-end gap-3">
         <Button
           variant="outline"
           onClick={onRegenerate}
-          className="px-5 rounded-full font-sans text-sm"
+          className="px-5 rounded-full text-[13px] font-semibold border-[#cacacb] text-[#111111] hover:border-[#111111]"
         >
           다시 생성
         </Button>
         <Button
           onClick={onSave}
-          className="px-5 rounded-full bg-stone-900 text-white font-sans text-sm font-semibold"
+          className="px-5 rounded-full bg-[#111111] text-white text-[13px] font-semibold hover:bg-[#333333]"
         >
           저장하기
         </Button>
@@ -346,26 +363,23 @@ function SectionHeader({
   number,
   title,
   subtitle,
-  color = 'stone',
 }: {
   number: string
   title: string
   subtitle?: string
-  color?: 'stone' | 'violet'
 }) {
   return (
-    <div className="flex items-center gap-2 mb-4">
+    <div className="flex items-center gap-2.5 mb-4">
       <div
-        className={`w-6 h-6 rounded-md text-white text-xs font-sans font-semibold flex items-center justify-center ${
-          color === 'violet' ? 'bg-violet-600' : 'bg-stone-900'
-        }`}
+        className="w-6 h-6 text-white text-[11px] font-black flex items-center justify-center flex-shrink-0"
+        style={{ backgroundColor: '#111111' }}
       >
         {number}
       </div>
-      <h2 className="text-2xl tracking-tight">
+      <h2 className="text-[20px] font-black text-[#111111]">
         {title}
         {subtitle && (
-          <span className="text-stone-400 italic text-lg ml-2">— {subtitle}</span>
+          <span className="text-[#9e9ea0] font-medium text-[14px] ml-2">— {subtitle}</span>
         )}
       </h2>
     </div>
@@ -375,21 +389,25 @@ function SectionHeader({
 function ShareButton({
   icon,
   label,
-  className = '',
+  borderRight,
   onClick,
 }: {
   icon: React.ReactNode
   label: string
-  className?: string
+  borderRight?: boolean
   onClick?: () => void
 }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-2xl border border-stone-200 bg-white p-5 hover:border-stone-900 transition-colors flex flex-col items-center gap-2 font-sans ${className}`}
+      className="p-5 hover:bg-[#f5f5f5] transition-colors flex flex-col items-center gap-2"
+      style={{
+        backgroundColor: '#ffffff',
+        borderRight: borderRight ? '1px solid #e5e5e5' : undefined,
+      }}
     >
-      {icon}
-      <span className="text-sm font-semibold">{label}</span>
+      <div className="text-[#111111]">{icon}</div>
+      <span className="text-[13px] font-semibold text-[#111111]">{label}</span>
     </button>
   )
 }

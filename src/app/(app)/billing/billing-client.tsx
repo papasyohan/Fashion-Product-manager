@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Check, Zap, Sparkles, Building2, ChevronRight } from 'lucide-react'
+import { Check, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 // ─── 플랜 정의 ────────────────────────────────────────────────────────────────
@@ -15,8 +15,6 @@ const PLANS = [
     priceLabel: '무료',
     credits: 3,
     period: '월',
-    icon: null,
-    color: 'stone',
     features: [
       '월 3크레딧 (체험)',
       '간편 모드 전용',
@@ -32,8 +30,6 @@ const PLANS = [
     priceLabel: '₩19,900',
     credits: 50,
     period: '월',
-    icon: Zap,
-    color: 'blue',
     features: [
       '월 50크레딧',
       '간편 + 스튜디오 모드',
@@ -50,8 +46,6 @@ const PLANS = [
     priceLabel: '₩49,900',
     credits: 200,
     period: '월',
-    icon: Sparkles,
-    color: 'violet',
     features: [
       '월 200크레딧',
       '간편 + 스튜디오 모드',
@@ -70,8 +64,6 @@ const PLANS = [
     priceLabel: '₩149,000',
     credits: 1000,
     period: '월',
-    icon: Building2,
-    color: 'amber',
     features: [
       '월 1,000크레딧',
       '모든 Pro 기능',
@@ -83,13 +75,6 @@ const PLANS = [
     highlight: false,
   },
 ]
-
-const COLOR_MAP: Record<string, { badge: string; button: string; border: string; text: string }> = {
-  stone:  { badge: 'bg-stone-100 text-stone-700',   button: 'bg-stone-200 text-stone-700 hover:bg-stone-300',      border: 'border-stone-200',  text: 'text-stone-700' },
-  blue:   { badge: 'bg-blue-50 text-blue-700',       button: 'bg-blue-600 text-white hover:bg-blue-700',            border: 'border-blue-200',   text: 'text-blue-700' },
-  violet: { badge: 'bg-violet-50 text-violet-700',   button: 'bg-violet-600 text-white hover:bg-violet-700',        border: 'border-violet-300', text: 'text-violet-700' },
-  amber:  { badge: 'bg-amber-50 text-amber-700',     button: 'bg-amber-500 text-white hover:bg-amber-600',          border: 'border-amber-200',  text: 'text-amber-700' },
-}
 
 // ─── 크레딧 충전 팩 ──────────────────────────────────────────────────────────
 
@@ -136,7 +121,6 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
         text: `결제 실패 — ${message ?? code ?? '알 수 없는 오류'}`,
       })
     }
-    // URL 파라미터 정리
     router.replace('/billing')
     const t = setTimeout(() => setBanner(null), 7000)
     return () => clearTimeout(t)
@@ -163,7 +147,6 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
 
     setLoadingPlan(planId)
     try {
-      // orderId 포맷: plan-{planId}-{userId}-{timestamp} → 웹훅에서 파싱
       const orderId = `plan-${planId}-${userId}-${Date.now()}`
       const origin = window.location.origin
       const tossPayments = window.TossPayments(clientKey)
@@ -176,7 +159,6 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
         successUrl: `${origin}/billing?status=success`,
         failUrl: `${origin}/billing?status=fail`,
       })
-      // requestPayment가 리다이렉트 처리하므로 아래는 도달하지 않음
     } catch (err) {
       const message = err instanceof Error ? err.message : '결제 요청 실패'
       setBanner({ kind: 'error', text: message })
@@ -230,20 +212,16 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
   }
 
   return (
-    <div
-      className="max-w-5xl mx-auto px-6 py-10"
-      style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}
-    >
+    <div className="max-w-5xl mx-auto px-6 py-10">
       {/* 결제 결과 배너 */}
       {banner && (
         <div
-          className={`mb-6 rounded-2xl px-5 py-4 text-sm font-sans border ${
-            banner.kind === 'success'
-              ? 'bg-green-50 border-green-200 text-green-800'
-              : banner.kind === 'error'
-              ? 'bg-red-50 border-red-200 text-red-800'
-              : 'bg-stone-50 border-stone-200 text-stone-700'
-          }`}
+          className="mb-6 px-5 py-4 text-[13px]"
+          style={{
+            border: `1px solid ${banner.kind === 'success' ? '#007d48' : banner.kind === 'error' ? '#d30005' : '#e5e5e5'}`,
+            backgroundColor: banner.kind === 'success' ? '#f0faf6' : banner.kind === 'error' ? '#fff5f5' : '#f5f5f5',
+            color: banner.kind === 'success' ? '#007d48' : banner.kind === 'error' ? '#d30005' : '#111111',
+          }}
         >
           {banner.text}
         </div>
@@ -251,64 +229,76 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
 
       {/* 헤더 */}
       <div className="mb-10">
-        <h1 className="text-4xl tracking-tight mb-2">
-          플랜 &amp; 결제 <span className="italic text-stone-400">— {email}</span>
+        <h1 className="text-[28px] font-black text-[#111111] mb-2">
+          플랜 &amp; 결제
+          <span className="text-[#9e9ea0] font-medium text-[16px] ml-3">— {email}</span>
         </h1>
         <div className="flex items-center gap-3 mt-4">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-stone-100">
-            <span className="text-sm font-sans text-stone-500">현재 플랜</span>
-            <span className="font-semibold text-stone-900 capitalize">{currentPlan}</span>
+          <div
+            className="flex items-center gap-2 px-4 py-2"
+            style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }}
+          >
+            <span className="text-[13px] text-[#707072]">현재 플랜</span>
+            <span className="text-[13px] font-black text-[#111111] uppercase">{currentPlan}</span>
           </div>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-stone-100">
-            <span className="text-sm font-sans text-stone-500">잔여 크레딧</span>
-            <span className="font-semibold text-stone-900">{creditsLeft}개</span>
+          <div
+            className="flex items-center gap-2 px-4 py-2"
+            style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }}
+          >
+            <span className="text-[13px] text-[#707072]">잔여 크레딧</span>
+            <span className="text-[13px] font-black text-[#111111]">{creditsLeft}개</span>
           </div>
         </div>
       </div>
 
-      {/* 플랜 그리드 */}
-      <div className="grid md:grid-cols-4 gap-4 mb-12">
-        {PLANS.map((plan) => {
+      {/* 플랜 그리드 — 연속 패널 구조 */}
+      <div
+        className="grid md:grid-cols-4 mb-12"
+        style={{ border: '1px solid #e5e5e5' }}
+      >
+        {PLANS.map((plan, idx) => {
           const isCurrentPlan = plan.id === currentPlan
-          const colors = COLOR_MAP[plan.color]
-          const Icon = plan.icon
 
           return (
             <div
               key={plan.id}
-              className={`relative rounded-3xl border-2 p-6 flex flex-col
-                ${plan.highlight ? `${colors.border} shadow-lg` : 'border-stone-200'}
-              `}
+              className="p-6 flex flex-col"
+              style={{
+                borderRight: idx < PLANS.length - 1 ? '1px solid #e5e5e5' : undefined,
+                borderTop: plan.highlight ? '3px solid #111111' : '3px solid transparent',
+                backgroundColor: plan.highlight ? '#f5f5f5' : '#ffffff',
+              }}
             >
               {/* 인기 배지 */}
               {'badge' in plan && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-violet-600 text-white text-[11px] font-sans font-bold">
-                  {plan.badge}
+                <div className="mb-3">
+                  <span className="px-2 py-0.5 bg-[#111111] text-white text-[9px] font-black tracking-widest">
+                    {plan.badge}
+                  </span>
                 </div>
               )}
 
               {/* 플랜명 */}
-              <div className="flex items-center gap-2 mb-4">
-                {Icon && <Icon className={`w-5 h-5 ${colors.text}`} />}
-                <span className={`text-sm font-sans font-bold ${colors.text}`}>
+              <div className="mb-4">
+                <span className="text-[13px] font-black text-[#111111] uppercase tracking-wide">
                   {plan.name}
                 </span>
               </div>
 
               <div className="mb-1">
-                <span className="text-3xl tracking-tight font-semibold">{plan.priceLabel}</span>
+                <span className="text-[28px] font-black text-[#111111] tracking-tight">{plan.priceLabel}</span>
                 {plan.price > 0 && (
-                  <span className="text-xs font-sans text-stone-400 ml-1">/{plan.period}</span>
+                  <span className="text-[12px] text-[#9e9ea0] ml-1">/{plan.period}</span>
                 )}
               </div>
-              <p className="text-xs font-sans text-stone-500 mb-5">
+              <p className="text-[12px] text-[#707072] mb-5">
                 월 {plan.credits.toLocaleString()}크레딧
               </p>
 
               <ul className="space-y-2.5 flex-1 mb-6">
                 {plan.features.map((f, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs font-sans text-stone-600">
-                    <Check className="w-3.5 h-3.5 mt-0.5 text-stone-400 flex-shrink-0" strokeWidth={2.5} />
+                  <li key={i} className="flex items-start gap-2 text-[12px] text-[#707072]">
+                    <Check className="w-3.5 h-3.5 mt-0.5 text-[#111111] flex-shrink-0" strokeWidth={2.5} />
                     <span>{f}</span>
                   </li>
                 ))}
@@ -317,8 +307,10 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
               <Button
                 onClick={() => handleUpgrade(plan.id)}
                 disabled={isCurrentPlan || loadingPlan === plan.id}
-                className={`w-full rounded-full text-sm font-sans font-semibold transition-colors ${colors.button} ${
-                  isCurrentPlan ? 'opacity-60 cursor-default' : ''
+                className={`w-full rounded-full text-[13px] font-semibold transition-colors ${
+                  isCurrentPlan
+                    ? 'bg-[#f5f5f5] text-[#9e9ea0] border border-[#e5e5e5] cursor-default'
+                    : 'bg-[#111111] text-white hover:bg-[#333333]'
                 }`}
               >
                 {isCurrentPlan
@@ -337,38 +329,45 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
 
       {/* 크레딧 충전 (소액 일회성 구매) */}
       <div id="topup" className="mb-12 scroll-mt-20">
-        <h2 className="text-2xl tracking-tight mb-1">
-          크레딧 충전 <span className="text-stone-400 italic text-lg">— 플랜 변경 없이</span>
+        <h2 className="text-[20px] font-black text-[#111111] mb-1">
+          크레딧 충전
+          <span className="text-[#9e9ea0] font-medium text-[14px] ml-2">— 플랜 변경 없이</span>
         </h2>
-        <p className="text-sm font-sans text-stone-500 mb-6">
+        <p className="text-[13px] text-[#707072] mb-6">
           플랜을 유지하면서 크레딧만 추가 구매할 수 있습니다.
         </p>
-        <div className="grid sm:grid-cols-3 gap-4">
-          {TOPUP_PACKS.map((pack) => (
+        <div
+          className="grid sm:grid-cols-3"
+          style={{ border: '1px solid #e5e5e5' }}
+        >
+          {TOPUP_PACKS.map((pack, idx) => (
             <div
               key={pack.id}
-              className={`rounded-3xl border-2 p-6 flex flex-col ${
-                pack.highlight ? 'border-stone-900 shadow-md' : 'border-stone-200'
-              }`}
+              className="p-6 flex flex-col"
+              style={{
+                borderRight: idx < TOPUP_PACKS.length - 1 ? '1px solid #e5e5e5' : undefined,
+                borderTop: pack.highlight ? '3px solid #111111' : '3px solid transparent',
+                backgroundColor: pack.highlight ? '#f5f5f5' : '#ffffff',
+              }}
             >
               {pack.badge && (
                 <div className="mb-3">
-                  <span className="px-2 py-0.5 rounded-full bg-stone-900 text-white text-[10px] font-sans font-bold">
+                  <span className="px-2 py-0.5 bg-[#111111] text-white text-[9px] font-black tracking-widest">
                     {pack.badge}
                   </span>
                 </div>
               )}
-              <p className="text-3xl tracking-tight mb-0.5">{pack.priceLabel}</p>
-              <p className="text-sm font-sans text-stone-500 mb-1">
+              <p className="text-[28px] font-black text-[#111111] tracking-tight mb-0.5">{pack.priceLabel}</p>
+              <p className="text-[13px] text-[#707072] mb-1">
                 {pack.credits.toLocaleString()}크레딧
               </p>
-              <p className="text-xs font-sans text-stone-400 mb-5">
+              <p className="text-[12px] text-[#9e9ea0] mb-5">
                 크레딧당 {Math.round(pack.price / pack.credits).toLocaleString()}원
               </p>
               <Button
                 onClick={() => handleTopup(pack)}
                 disabled={loadingPlan === `topup-${pack.id}`}
-                className="mt-auto w-full rounded-full text-sm font-sans font-semibold bg-stone-900 text-white hover:bg-stone-700 transition-colors"
+                className="mt-auto w-full rounded-full text-[13px] font-semibold bg-[#111111] text-white hover:bg-[#333333] transition-colors"
               >
                 {loadingPlan === `topup-${pack.id}` ? '처리중...' : '충전하기'}
               </Button>
@@ -379,36 +378,46 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
 
       {/* 사용량 내역 */}
       <div>
-        <h2 className="text-2xl tracking-tight mb-4">
-          사용 내역 <span className="text-stone-400 italic text-lg">— 최근 20건</span>
+        <h2 className="text-[20px] font-black text-[#111111] mb-1">
+          사용 내역
+          <span className="text-[#9e9ea0] font-medium text-[14px] ml-2">— 최근 20건</span>
         </h2>
+        <div className="mb-6" />
 
         {usageEvents.length === 0 ? (
-          <div className="text-center py-12 rounded-2xl border border-stone-200">
-            <p className="text-stone-400 font-sans text-sm">사용 내역이 없습니다.</p>
+          <div
+            className="text-center py-12"
+            style={{ border: '1px solid #e5e5e5' }}
+          >
+            <p className="text-[13px] text-[#9e9ea0]">사용 내역이 없습니다.</p>
           </div>
         ) : (
-          <div className="rounded-2xl border border-stone-200 overflow-hidden">
+          <div style={{ border: '1px solid #e5e5e5', overflow: 'hidden' }}>
             <table className="w-full">
               <thead>
-                <tr className="border-b border-stone-100 bg-stone-50">
-                  <th className="text-left px-5 py-3 text-xs font-sans font-semibold text-stone-500 uppercase tracking-wider">항목</th>
-                  <th className="text-right px-5 py-3 text-xs font-sans font-semibold text-stone-500 uppercase tracking-wider">크레딧</th>
-                  <th className="text-right px-5 py-3 text-xs font-sans font-semibold text-stone-500 uppercase tracking-wider">일시</th>
+                <tr style={{ borderBottom: '1px solid #e5e5e5', backgroundColor: '#f5f5f5' }}>
+                  <th className="text-left px-5 py-3 text-[11px] font-black text-[#9e9ea0] uppercase tracking-widest">항목</th>
+                  <th className="text-right px-5 py-3 text-[11px] font-black text-[#9e9ea0] uppercase tracking-widest">크레딧</th>
+                  <th className="text-right px-5 py-3 text-[11px] font-black text-[#9e9ea0] uppercase tracking-widest">일시</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-100">
+              <tbody>
                 {usageEvents.map((evt, i) => (
-                  <tr key={i} className="hover:bg-stone-50 transition-colors">
-                    <td className="px-5 py-3 text-sm font-sans text-stone-700">
+                  <tr
+                    key={i}
+                    className="hover:bg-[#f5f5f5] transition-colors"
+                    style={{ borderBottom: i < usageEvents.length - 1 ? '1px solid #e5e5e5' : undefined }}
+                  >
+                    <td className="px-5 py-3 text-[13px] text-[#111111]">
                       {EVENT_LABELS[evt.event_type] ?? evt.event_type}
                     </td>
-                    <td className={`px-5 py-3 text-sm font-sans font-semibold text-right ${
-                      evt.credits_used > 0 ? 'text-red-600' : 'text-green-600'
-                    }`}>
+                    <td
+                      className="px-5 py-3 text-[13px] font-bold text-right"
+                      style={{ color: evt.credits_used > 0 ? '#d30005' : '#007d48' }}
+                    >
                       {evt.credits_used > 0 ? `-${evt.credits_used}` : `+${Math.abs(evt.credits_used)}`}
                     </td>
-                    <td className="px-5 py-3 text-xs font-sans text-stone-400 text-right">
+                    <td className="px-5 py-3 text-[12px] text-[#9e9ea0] text-right">
                       {formatDate(evt.created_at)}
                     </td>
                   </tr>

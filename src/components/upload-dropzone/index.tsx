@@ -31,12 +31,10 @@ export function UploadDropzone({
 
   const processFile = useCallback(
     async (file: File) => {
-      // 파일 타입 검사
       if (!ACCEPTED_TYPES.includes(file.type)) {
         onError?.('JPG, PNG, WebP 형식만 지원합니다.')
         return
       }
-      // 파일 크기 검사
       if (file.size > MAX_SIZE_MB * 1024 * 1024) {
         onError?.(`파일 크기는 ${MAX_SIZE_MB}MB 이하여야 합니다.`)
         return
@@ -47,20 +45,16 @@ export function UploadDropzone({
       setFileName(file.name)
 
       try {
-        // 미리보기 생성 (원본)
         const previewUrl = URL.createObjectURL(file)
         setPreview(previewUrl)
         setProgress(20)
 
-        // 클라이언트 전처리: 긴 변 ≤ 2048px 리사이즈 + WebP 변환 (개발계획서 G2)
         const processed = await preprocessImage(file)
         setProgress(45)
 
-        // base64 변환 (전처리된 파일 기준)
         const base64 = await fileToBase64(processed)
         setProgress(65)
 
-        // 서버 업로드 API 호출 (원본 파일명 유지, 전처리 파일 전송)
         const formData = new FormData()
         formData.append('file', processed, processed.name)
 
@@ -117,43 +111,46 @@ export function UploadDropzone({
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
-      className={`rounded-3xl border-2 border-dashed transition-all duration-300 ${
-        disabled
-          ? 'border-stone-200 bg-stone-100/50 opacity-50 pointer-events-none'
-          : isDragging
-          ? 'border-stone-900 bg-stone-50 scale-[1.01]'
-          : preview
-          ? 'border-stone-400 bg-white'
-          : 'border-stone-300 bg-white hover:border-stone-500 hover:bg-stone-50'
-      }`}
+      style={{
+        border: `2px dashed ${
+          disabled ? '#e5e5e5' : isDragging ? '#111111' : preview ? '#9e9ea0' : '#cacacb'
+        }`,
+        backgroundColor: isDragging ? '#f5f5f5' : '#ffffff',
+        opacity: disabled ? 0.5 : 1,
+        pointerEvents: disabled ? 'none' : undefined,
+        transition: 'border-color 200ms, background-color 200ms',
+      }}
     >
       {preview ? (
         // 업로드된 이미지 미리보기
         <div className="p-6 flex items-center gap-4">
-          <div className="relative w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 ring-1 ring-stone-200">
+          <div
+            className="relative w-20 h-20 overflow-hidden flex-shrink-0"
+            style={{ border: '1px solid #e5e5e5' }}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={preview} alt="제품 미리보기" className="w-full h-full object-cover" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-              <span className="text-sm font-sans font-semibold text-stone-900 truncate">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" style={{ color: '#007d48' }} />
+              <span className="text-[13px] font-semibold text-[#111111] truncate">
                 {fileName}
               </span>
             </div>
             {uploading ? (
               <div className="space-y-1.5">
                 <Progress value={progress} className="h-1.5" />
-                <p className="text-xs font-sans text-stone-500">업로드 중... {progress}%</p>
+                <p className="text-[12px] text-[#9e9ea0]">업로드 중... {progress}%</p>
               </div>
             ) : (
-              <p className="text-xs font-sans text-green-600">업로드 완료</p>
+              <p className="text-[12px] font-medium" style={{ color: '#007d48' }}>업로드 완료</p>
             )}
           </div>
           {!uploading && (
             <button
               onClick={handleReset}
-              className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700 transition-colors"
+              className="p-1.5 rounded-full hover:bg-[#f5f5f5] text-[#9e9ea0] hover:text-[#111111] transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -162,21 +159,24 @@ export function UploadDropzone({
       ) : (
         // 업로드 영역
         <div className="p-10 text-center">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-stone-900 flex items-center justify-center mb-4">
+          <div
+            className="w-14 h-14 mx-auto flex items-center justify-center mb-4"
+            style={{ backgroundColor: '#111111' }}
+          >
             {uploading ? (
               <Loader2 className="w-7 h-7 text-white animate-spin" />
             ) : (
               <ImageIcon className="w-7 h-7 text-white" strokeWidth={1.75} />
             )}
           </div>
-          <p className="text-lg mb-1">제품 사진을 업로드하세요</p>
-          <p className="text-sm text-stone-500 font-sans mb-6">
+          <p className="text-[15px] font-semibold text-[#111111] mb-1">제품 사진을 업로드하세요</p>
+          <p className="text-[13px] text-[#9e9ea0] mb-6">
             JPG · PNG · WebP (최대 {MAX_SIZE_MB}MB) · 드래그앤드롭 지원
           </p>
           <label htmlFor="file-upload">
             <Button
               disabled={uploading || disabled}
-              className="px-6 py-3 rounded-full bg-stone-900 text-white font-sans text-sm font-semibold hover:bg-stone-700 cursor-pointer"
+              className="px-6 py-3 rounded-full bg-[#111111] text-white text-[13px] font-semibold hover:bg-[#333333] cursor-pointer"
               onClick={(e) => {
                 e.preventDefault()
                 document.getElementById('file-upload')?.click()
@@ -215,17 +215,12 @@ function fileToBase64(file: File): Promise<string> {
  *  - 긴 변이 MAX_DIMENSION(2048px)을 넘으면 비율 유지하며 축소
  *  - PNG/JPEG → WebP 변환 (이미 WebP면 품질만 재인코딩)
  *  - WebP 인코딩 실패/미지원 브라우저는 원본을 그대로 반환 (graceful degrade)
- *
- * 이유:
- *  - 네트워크 절감 (최대 70% 용량 감소)
- *  - Nano Banana 2 reference image는 고해상도 불필요 (≤2K면 충분)
  */
 async function preprocessImage(file: File): Promise<File> {
   try {
     const bitmap = await createBitmap(file)
     const { width: srcW, height: srcH } = bitmap
 
-    // 리사이즈 불필요 & 이미 WebP면 그대로 반환
     const needsResize = Math.max(srcW, srcH) > MAX_DIMENSION
     const needsConvert = file.type !== 'image/webp'
     if (!needsResize && !needsConvert) {
@@ -253,7 +248,6 @@ async function preprocessImage(file: File): Promise<File> {
     const base = file.name.replace(/\.(jpe?g|png|webp)$/i, '')
     return new File([blob], `${base}.webp`, { type: 'image/webp', lastModified: Date.now() })
   } catch (err) {
-    // 전처리 실패 시 원본으로 fallback — 업로드 자체는 막지 않는다
     console.warn('[UploadDropzone] 전처리 실패, 원본 파일 업로드:', err)
     return file
   }
@@ -264,7 +258,6 @@ async function createBitmap(file: File): Promise<ImageBitmap & { close?: () => v
   if (typeof createImageBitmap === 'function') {
     return (await createImageBitmap(file)) as ImageBitmap & { close?: () => void }
   }
-  // 레거시 fallback — HTMLImageElement를 ImageBitmap 호환 객체로 감싼다
   const img = new Image()
   const url = URL.createObjectURL(file)
   await new Promise<void>((resolve, reject) => {

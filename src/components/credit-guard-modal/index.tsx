@@ -65,18 +65,21 @@ export function CreditGuardModal({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       {/* Overlay + Panel */}
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/50 backdrop-blur-sm px-4"
+        className="fixed inset-0 z-50 flex items-center justify-center px-4"
+        style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
         onClick={onClose}
       >
         <div
-          className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden"
+          className="relative w-full max-w-lg bg-white overflow-hidden"
           onClick={(e) => e.stopPropagation()}
-          style={{ fontFamily: "'Instrument Serif', 'Noto Serif KR', Georgia, serif" }}
         >
-          {/* 상단 그래디언트 배너 */}
-          <div className="bg-gradient-to-br from-amber-400 via-orange-400 to-pink-500 px-8 pt-8 pb-10">
+          {/* 상단 다크 배너 */}
+          <div className="px-8 pt-8 pb-10" style={{ backgroundColor: '#111111' }}>
             <div className="flex items-start justify-between">
-              <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-4">
+              <div
+                className="w-12 h-12 flex items-center justify-center mb-4"
+                style={{ backgroundColor: '#1c1c1c' }}
+              >
                 {isCreditsIssue ? (
                   <Zap className="w-6 h-6 text-white" strokeWidth={2} />
                 ) : (
@@ -85,16 +88,16 @@ export function CreditGuardModal({
               </div>
               <button
                 onClick={onClose}
-                className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 transition-colors flex items-center justify-center"
+                className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#1c1c1c] transition-colors"
               >
                 <X className="w-4 h-4 text-white" strokeWidth={2.5} />
               </button>
             </div>
 
-            <h2 className="text-3xl text-white tracking-tight">
+            <h2 className="text-[24px] font-black text-white">
               {isCreditsIssue ? '크레딧이 부족해요' : '플랜 업그레이드 필요'}
             </h2>
-            <p className="mt-1 text-white/80 font-sans text-sm leading-relaxed">
+            <p className="mt-1 text-[#9e9ea0] text-[13px] leading-relaxed">
               {isCreditsIssue
                 ? `현재 잔여 크레딧: ${creditsLeft}개${guardResult.creditsRequired ? ` · 필요: ${guardResult.creditsRequired}개` : ''}`
                 : guardResult.reason ?? '이 기능은 상위 플랜에서 이용할 수 있습니다.'}
@@ -103,41 +106,40 @@ export function CreditGuardModal({
 
           {/* 플랜 카드 */}
           <div className="px-8 pt-6 pb-4">
-            <p className="text-xs font-sans uppercase tracking-widest text-stone-400 mb-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#9e9ea0] mb-4">
               플랜 선택
             </p>
-            <div className="space-y-3">
-              {PLANS.map((plan) => (
+            <div style={{ border: '1px solid #e5e5e5' }}>
+              {PLANS.map((plan, idx) => (
                 <a
                   key={plan.id}
                   href="/billing"
-                  className={`flex items-center justify-between rounded-2xl border-2 px-5 py-4 transition-all hover:shadow-md
-                    ${plan.highlight
-                      ? 'border-stone-900 bg-stone-50 shadow-sm'
-                      : 'border-stone-200 hover:border-stone-400 bg-white'}
-                  `}
+                  className="flex items-center justify-between px-5 py-4 hover:bg-[#f5f5f5] transition-colors"
+                  style={{
+                    borderBottom: idx < PLANS.length - 1 ? '1px solid #e5e5e5' : undefined,
+                    borderTop: plan.highlight ? '3px solid #111111' : '3px solid transparent',
+                    backgroundColor: plan.highlight ? '#f5f5f5' : '#ffffff',
+                  }}
                 >
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-sans font-semibold text-stone-900 text-sm">
-                          {plan.name}
-                        </span>
-                        {plan.badge && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-stone-900 text-white text-[10px] font-sans font-bold">
-                            {plan.badge}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs font-sans text-stone-500">
-                        월 {plan.credits.toLocaleString()}크레딧
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-bold text-[#111111]">
+                        {plan.name}
                       </span>
+                      {plan.badge && (
+                        <span className="px-1.5 py-0.5 bg-[#111111] text-white text-[9px] font-black tracking-widest">
+                          {plan.badge}
+                        </span>
+                      )}
                     </div>
+                    <span className="text-[12px] text-[#707072]">
+                      월 {plan.credits.toLocaleString()}크레딧
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xl tracking-tight text-stone-900">{plan.price}</span>
-                    <span className="text-xs font-sans text-stone-400">{plan.period}</span>
-                    <ArrowRight className="w-4 h-4 text-stone-400 ml-1" />
+                    <span className="text-[18px] font-black text-[#111111]">{plan.price}</span>
+                    <span className="text-[12px] text-[#9e9ea0]">{plan.period}</span>
+                    <ArrowRight className="w-4 h-4 text-[#9e9ea0] ml-1" />
                   </div>
                 </a>
               ))}
@@ -149,13 +151,13 @@ export function CreditGuardModal({
             <Button
               variant="outline"
               onClick={onClose}
-              className="flex-1 rounded-full font-sans border-stone-300 text-stone-600"
+              className="flex-1 rounded-full text-[13px] font-semibold border-[#cacacb] text-[#707072] hover:border-[#111111]"
             >
               나중에
             </Button>
             <a
               href="/billing"
-              className="flex-1 rounded-full bg-stone-900 text-white font-sans font-semibold hover:bg-stone-700 inline-flex items-center justify-center px-4 py-2 text-sm transition-colors"
+              className="flex-1 rounded-full bg-[#111111] text-white font-semibold hover:bg-[#333333] inline-flex items-center justify-center px-4 py-2 text-[13px] transition-colors"
             >
               플랜 업그레이드 <ArrowRight className="w-4 h-4 ml-1.5" />
             </a>
@@ -163,10 +165,10 @@ export function CreditGuardModal({
 
           {/* 소액 크레딧 구매 링크 */}
           {isCreditsIssue && (
-            <div className="border-t border-stone-100 px-8 py-4 text-center">
+            <div className="px-8 py-4 text-center" style={{ borderTop: '1px solid #e5e5e5' }}>
               <a
                 href="/billing#topup"
-                className="text-xs font-sans text-stone-500 hover:text-stone-900 underline transition-colors"
+                className="text-[12px] text-[#9e9ea0] hover:text-[#111111] underline transition-colors"
               >
                 플랜 변경 없이 크레딧만 충전하기 →
               </a>
