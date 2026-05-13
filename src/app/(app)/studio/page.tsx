@@ -63,7 +63,9 @@ export default function StudioPage() {
 
       if (!res.ok) {
         const err = await res.json()
-        throw new Error(err.error ?? 'AI 생성 실패')
+        const stepInfo = err.step ? ` [step: ${err.step}]` : ''
+        const debugInfo = err.debug && err.debug !== err.error ? ` (${err.debug})` : ''
+        throw new Error(`${err.error ?? 'AI 생성 실패'}${stepInfo}${debugInfo}`)
       }
 
       store.setStatus('generating_tagline', STATUS_PROGRESS.generating_tagline)

@@ -13,7 +13,7 @@ export default async function BillingPage() {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('plan, credits_left, email')
+    .select('plan, credits_left')
     .eq('id', user.id)
     .single()
 

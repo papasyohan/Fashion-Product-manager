@@ -35,12 +35,12 @@ export async function POST(request: NextRequest) {
 
     const { method, projectId, phone, productName, tagline, shareUrl } = parsed.data
 
-    // 공유 이벤트 기록
+    // 공유 이벤트 기록 (channel = DB 컬럼명, target = 수신자)
     await supabase.from('shares').insert({
       project_id: projectId,
       user_id: user.id,
-      method,
-      recipient: phone ?? null,
+      channel: method,
+      target: phone ?? null,
     })
 
     if (method === 'sms') {
