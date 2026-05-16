@@ -40,6 +40,8 @@ export interface Database {
           mode: 'quick' | 'studio'
           product_image_url: string | null
           status: 'pending' | 'processing' | 'done' | 'failed'
+          /** v1.1 — { tone, audience, channel, memo } */
+          user_intent: Json | null
           created_at: string
           updated_at: string
         }
@@ -49,6 +51,7 @@ export interface Database {
           mode: 'quick' | 'studio'
           product_image_url?: string | null
           status?: 'pending' | 'processing' | 'done' | 'failed'
+          user_intent?: Json | null
           created_at?: string
           updated_at?: string
         }
@@ -56,6 +59,7 @@ export interface Database {
           mode?: 'quick' | 'studio'
           product_image_url?: string | null
           status?: 'pending' | 'processing' | 'done' | 'failed'
+          user_intent?: Json | null
           updated_at?: string
         }
       }
@@ -65,6 +69,14 @@ export interface Database {
           project_id: string
           type: 'analyze' | 'naming' | 'tagline' | 'description' | 'thumbnail'
           payload: Json | null
+          /** v1.1 — true if user manually edited the result text */
+          user_edited: boolean | null
+          /** v1.1 — variant tree parent reference */
+          parent_id: string | null
+          /** v1.1 — user refinement string used for regeneration */
+          refinement_prompt: string | null
+          /** v1.1 — locked from cascade regeneration */
+          locked: boolean | null
           created_at: string
         }
         Insert: {
@@ -72,10 +84,18 @@ export interface Database {
           project_id: string
           type: 'analyze' | 'naming' | 'tagline' | 'description' | 'thumbnail'
           payload?: Json | null
+          user_edited?: boolean | null
+          parent_id?: string | null
+          refinement_prompt?: string | null
+          locked?: boolean | null
           created_at?: string
         }
         Update: {
           payload?: Json | null
+          user_edited?: boolean | null
+          parent_id?: string | null
+          refinement_prompt?: string | null
+          locked?: boolean | null
         }
       }
       thumbnails: {
@@ -87,6 +107,8 @@ export interface Database {
           height: number | null
           aspect_ratio: string | null
           is_primary: boolean
+          /** v1.1 — pinned during re-roll (Phase 2) */
+          is_pinned: boolean | null
           nano_banana_request_id: string | null
           created_at: string
         }
@@ -98,11 +120,13 @@ export interface Database {
           height?: number | null
           aspect_ratio?: string | null
           is_primary?: boolean
+          is_pinned?: boolean | null
           nano_banana_request_id?: string | null
           created_at?: string
         }
         Update: {
           is_primary?: boolean
+          is_pinned?: boolean | null
         }
       }
       shares: {

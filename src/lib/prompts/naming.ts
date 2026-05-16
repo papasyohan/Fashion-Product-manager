@@ -1,6 +1,10 @@
 /**
  * 상품명 생성 프롬프트 (기능 1개 = 파일 1개 원칙)
+ * v1.1: intent-injector 경유하여 userIntent / refinement 자동 반영
  */
+
+import { appendIntentSection } from './intent-injector'
+import type { UserIntent } from '@/lib/ai/types'
 
 export const NAMING_SYSTEM_PROMPT = `당신은 한국 이커머스 전문 상품 네이밍 전문가입니다.
 트렌드 키워드를 반영하여 클릭률 높은 상품명을 생성합니다.
@@ -17,7 +21,11 @@ export const buildNamingPrompt = (params: {
   trendKeywords: string[]
   style?: string
   platform?: string
-}) => `다음 제품 정보로 상품명 3개를 생성해주세요:
+  userIntent?: UserIntent
+  refinement?: string
+}) =>
+  appendIntentSection(
+    `다음 제품 정보로 상품명 3개를 생성해주세요:
 
 카테고리: ${params.category}
 핵심 키워드: ${params.keywords.join(', ')}
@@ -32,4 +40,7 @@ export const buildNamingPrompt = (params: {
     {"name": "상품명2 (감성/라이프스타일 각도)", "trend": "#해시태그1 #해시태그2"},
     {"name": "상품명3 (기능/스펙 각도)", "trend": "#해시태그1 #해시태그2"}
   ]
-}`
+}`,
+    params.userIntent,
+    params.refinement,
+  )

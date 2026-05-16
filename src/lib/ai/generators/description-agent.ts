@@ -9,7 +9,7 @@
 
 import { generateObject, streamObject } from 'ai'
 import { runWithFallback, resolveModels } from '@/lib/ai/router'
-import { DescriptionSchema } from '@/lib/ai/types'
+import { DescriptionSchema, type UserIntent } from '@/lib/ai/types'
 import {
   DESCRIPTION_SYSTEM_PROMPT,
   buildDescriptionPrompt,
@@ -29,6 +29,8 @@ export type DescriptionParams = {
   mode: 'quick' | 'studio'
   targetAudience?: string
   specs?: Record<string, string | string[]>
+  userIntent?: UserIntent
+  refinement?: string
 }
 
 // ─── 비스트리밍 (개별 엔드포인트용) ──────────────────────────────────────────

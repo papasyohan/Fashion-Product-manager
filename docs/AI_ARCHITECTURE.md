@@ -455,10 +455,69 @@ vercel env add LOCAL_LLM_API_KEY production
 
 ---
 
+## 12-A. 사용자 의도 / 보정 지시 주입 (v1.1 — UX Customization)
+
+상세 사양은 [`UX_CUSTOMIZATION.md`](./UX_CUSTOMIZATION.md) 참조.
+
+### 데이터 흐름
+
+```
+Client (IntentForm)
+   ↓ userIntent
+Studio Store
+   ↓ userIntent + refinement
+API Route (/api/generate/<task>)
+   ↓ Zod schema 통과
+runWithFallback('<task>', (model) =>
+   generateObject({
+     model,
+     prompt: builder({ ...params, userIntent, refinement })
+   })
+)
+   ↓ prompt builder
+intent-injector.ts
+   appendIntentSection(prompt, userIntent, refinement)
+```
+
+### 규약
+
+모든 prompt builder 는 호출 직전 `intent-injector.ts` 의 `appendIntentSection()` 으로 다음 두 섹션을 자동 append:
+
+```
+[사용자 의도]    ← userIntent 비어있지 않을 때만
+- 톤: {tone}
+- 타깃: {audience}
+- 채널: {channel}
+- 추가 요청: {memo}
+
+[보정 지시]      ← refinement 있을 때만
+- "{refinement}"
+```
+
+### Zod 스키마 추가 필드
+
+모든 generator 라우트의 입력 스키마에 다음 두 옵션 필드 추가:
+
+```typescript
+userIntent: z.object({
+  tone: z.string().max(20).optional(),
+  audience: z.string().max(40).optional(),
+  channel: z.string().max(20).optional(),
+  memo: z.string().max(200).optional(),
+}).optional(),
+refinement: z.string().max(300).optional(),
+```
+
+### Edge Runtime 영향 없음
+intent-injector 는 순수 함수 (외부 API 호출 없음) → 기존 Edge Runtime 라우트 모두 안전.
+
+---
+
 ## 13. 변경 이력
 
 | 날짜 | 변경 | 커밋 |
 |------|------|------|
+| 2026-05-14 | v1.1 UX Customization Phase 1 — 의도 주입 + 분석 편집 + 인라인 편집 + 부분 재생성 | (current) |
 | 2026-05-14 | Vercel AI SDK v6 도입 / Edge + SSE 스트리밍 / 멀티 프로바이더 라우터 | `5392ee2` |
 | 2026-05-13 | DEV_BYPASS_CREDITS 환경변수 추가 | `6596da5` |
 | 2026-05-13 | Nike 디자인 시스템 전면 적용 | `c71ca6a`, `1b49cec` |

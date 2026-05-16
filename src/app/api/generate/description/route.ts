@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { generateDescription } from '@/lib/ai/generators/description-agent'
+import { UserIntentSchema } from '@/lib/ai/types'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -15,6 +16,9 @@ const DescriptionSchema = z.object({
   mode: z.enum(['quick', 'studio']).default('quick'),
   targetAudience: z.string().optional(),
   projectId: z.string().uuid().optional(),
+  userIntent: UserIntentSchema.optional(),
+  refinement: z.string().max(300).optional(),
+  parentId: z.string().uuid().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -29,11 +33,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { productName, tagline, category, keywords, mode, targetAudience, projectId } =
-      parsed.data
+    const {
+      productName, tagline, category, keywords, mode, targetAudience,
+      projectId, userIntent, refinement, parentId,
+    } = parsed.data
 
     const result = await generateDescription({
       productName, tagline, category, keywords, mode, targetAudience,
+      userIntent, refinement,
     })
 
     if (projectId) {
@@ -41,6 +48,8 @@ export async function POST(request: NextRequest) {
         project_id: projectId,
         type: 'description',
         payload: result as unknown as Record<string, unknown>,
+        parent_id: parentId ?? null,
+        refinement_prompt: refinement ?? null,
       })
     }
 

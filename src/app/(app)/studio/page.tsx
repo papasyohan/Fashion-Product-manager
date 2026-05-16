@@ -8,6 +8,8 @@ import { UploadDropzone } from '@/components/upload-dropzone'
 import { ResultCard } from '@/components/result-card'
 import { ModeSelector } from '@/components/mode-selector'
 import { CreditGuardModal } from '@/components/credit-guard-modal'
+import { IntentForm } from '@/components/intent-form'
+import { AnalysisReviewCard } from '@/components/analysis-review-card'
 import { createClient } from '@/lib/supabase/client'
 import {
   useStudioStore,
@@ -145,7 +147,13 @@ function StudioPageInner() {
       const res = await fetch('/api/generate/pipeline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl, imageBase64: base64, mode }),
+        body: JSON.stringify({
+          imageUrl,
+          imageBase64: base64,
+          mode,
+          // v1.1 — 사용자 의도 전달 (비어있으면 서버가 무시)
+          userIntent: store.userIntent,
+        }),
       })
 
       // 402 / 4xx → JSON 응답 (스트림 시작 전 차단)
@@ -187,6 +195,14 @@ function StudioPageInner() {
             return
           case 'analysis':
             analysisData = event.data
+            // v1.1 — 사이드바 노출용으로 store 에 원본 분석 저장
+            store.setAnalysis({
+              category: event.data.category,
+              style: event.data.style,
+              targetAudience: event.data.targetAudience,
+              keyFeatures: event.data.keyFeatures,
+              keywords: event.data.keywords,
+            })
             return
           case 'names':
             names = event.data
@@ -273,6 +289,102 @@ function StudioPageInner() {
     }
   }
 
+  // ─── v1.1: 인라인 편집 핸들러 ────────────────────────────────────────────
+  const handleEditName = useCallback((index: number, newName: string) => {
+    if (!store.result) return
+    const updated = [...store.result.names]
+    updated[index] = { ...updated[index], name: newName }
+    store.patchResult({ names: updated })
+  }, [store])
+
+  const handleEditTagline = useCallback((newTagline: string) => {
+    store.patchResult({ tagline: newTagline })
+  }, [store])
+
+  const handleEditDescription = useCallback((newDescription: string) => {
+    store.patchResult({ description: newDescription })
+  }, [store])
+
+  // ─── v1.1: 부분 재생성 핸들러 ────────────────────────────────────────────
+  const effectiveAnalysis = store.getEffectiveAnalysis()
+
+  const handleRegenerateNaming = useCallback(async (refinement?: string) => {
+    if (!store.projectId) return
+    try {
+      const res = await fetch('/api/generate/naming', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: effectiveAnalysis.category ?? '상품',
+          keywords: effectiveAnalysis.keywords ?? [],
+          style: effectiveAnalysis.style,
+          projectId: store.projectId,
+          userIntent: store.userIntent,
+          refinement,
+        }),
+      })
+      if (!res.ok) throw new Error('상품명 재생성 실패')
+      const data = await res.json()
+      store.patchResult({ names: data.names, selectedNameIndex: 0 })
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '재생성 실패')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.projectId, store.userIntent, effectiveAnalysis])
+
+  const handleRegenerateTagline = useCallback(async (refinement?: string) => {
+    if (!store.projectId || !store.result) return
+    try {
+      const primaryName = store.result.names[store.result.selectedNameIndex]?.name ?? ''
+      const res = await fetch('/api/generate/tagline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productName: primaryName,
+          category: effectiveAnalysis.category ?? '상품',
+          keywords: effectiveAnalysis.keywords ?? [],
+          projectId: store.projectId,
+          userIntent: store.userIntent,
+          refinement,
+        }),
+      })
+      if (!res.ok) throw new Error('홍보문구 재생성 실패')
+      const data = await res.json()
+      store.patchResult({ tagline: data.tagline })
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '재생성 실패')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.projectId, store.userIntent, store.result, effectiveAnalysis])
+
+  const handleRegenerateDescription = useCallback(async (refinement?: string) => {
+    if (!store.projectId || !store.result || !store.mode) return
+    try {
+      const primaryName = store.result.names[store.result.selectedNameIndex]?.name ?? ''
+      const res = await fetch('/api/generate/description', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productName: primaryName,
+          tagline: store.result.tagline,
+          category: effectiveAnalysis.category ?? '상품',
+          keywords: effectiveAnalysis.keywords ?? [],
+          mode: store.mode,
+          targetAudience: effectiveAnalysis.targetAudience,
+          projectId: store.projectId,
+          userIntent: store.userIntent,
+          refinement,
+        }),
+      })
+      if (!res.ok) throw new Error('상세설명 재생성 실패')
+      const data = await res.json()
+      store.patchResult({ description: data.description })
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '재생성 실패')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.projectId, store.userIntent, store.result, store.mode, effectiveAnalysis])
+
   // ─── 결과 화면 ────────────────────────────────────────────────────────
 
   if (store.status === 'done' && store.result && store.mode) {
@@ -291,14 +403,32 @@ function StudioPageInner() {
             </span>
           </div>
         </div>
-        <ResultCard
-          result={store.result}
-          mode={store.mode}
-          projectId={store.projectId}
-          onSelectName={store.selectName}
-          onRegenerate={() => store.reset()}
-          onSave={() => router.push('/history')}
-        />
+
+        {/* 결과 + 사이드바 (lg 이상 2단 레이아웃, 모바일은 사이드바가 floating drawer) */}
+        <div className="max-w-[1280px] mx-auto px-4 md:px-6 lg:flex lg:items-start lg:gap-6 lg:pt-6">
+          <div className="flex-1 min-w-0">
+            <ResultCard
+              result={store.result}
+              mode={store.mode}
+              projectId={store.projectId}
+              onSelectName={store.selectName}
+              onRegenerate={() => store.reset()}
+              onSave={() => router.push('/history')}
+              onEditName={handleEditName}
+              onEditTagline={handleEditTagline}
+              onEditDescription={handleEditDescription}
+              onRegenerateNaming={handleRegenerateNaming}
+              onRegenerateTagline={handleRegenerateTagline}
+              onRegenerateDescription={handleRegenerateDescription}
+            />
+          </div>
+
+          {/* L2 분석 사이드바 — 데스크탑 sticky, 모바일 drawer */}
+          <AnalysisReviewCard
+            analysis={effectiveAnalysis}
+            onUpdate={store.updateAnalysis}
+          />
+        </div>
 
         {/* 크레딧 업그레이드 모달 */}
         {guardModal.open && guardModal.result && (
@@ -376,9 +506,30 @@ function StudioPageInner() {
 
         <ModeSelector
           selectedMode={store.mode}
-          onSelect={store.setMode}
+          onSelect={(m) => {
+            store.setMode(m)
+            // v1.1 — 모드 선택 즉시 의도 입력 단계로 전환
+            store.setStatus('intent', 0)
+          }}
           disabled={isGenerating}
         />
+
+        {/* v1.1 — Step 2: IntentForm (모드 선택 후) */}
+        {store.mode && store.status === 'intent' && (
+          <div className="mt-6">
+            <IntentForm
+              initial={store.userIntent}
+              onSubmit={(intent) => {
+                store.setIntent(intent)
+                store.setStatus('idle', 0) // 업로드 활성화
+              }}
+              onSkip={() => {
+                store.clearIntent()
+                store.setStatus('idle', 0)
+              }}
+            />
+          </div>
+        )}
 
         {errorMsg && (
           <div
@@ -389,13 +540,33 @@ function StudioPageInner() {
           </div>
         )}
 
-        <div className="mt-8">
-          <UploadDropzone
-            disabled={!store.mode}
-            onUploadComplete={handleUploadComplete}
-            onError={(msg) => setErrorMsg(msg)}
-          />
-        </div>
+        {/* 업로드 영역 — 의도 단계 종료 후에만 활성화 */}
+        {store.mode && store.status !== 'intent' && (
+          <div className="mt-8">
+            <UploadDropzone
+              disabled={!store.mode || isGenerating}
+              onUploadComplete={handleUploadComplete}
+              onError={(msg) => setErrorMsg(msg)}
+            />
+            {/* 의도 요약 + 다시 수정 링크 */}
+            {(store.userIntent.tone || store.userIntent.audience || store.userIntent.channel || store.userIntent.memo) && (
+              <div className="mt-3 flex items-center justify-between p-3" style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }}>
+                <div className="text-[12px] text-[#707072] flex-1 truncate">
+                  <span className="font-semibold text-[#111111]">의도 반영됨:</span>{' '}
+                  {[store.userIntent.tone, store.userIntent.audience, store.userIntent.channel]
+                    .filter(Boolean).join(' · ')}
+                  {store.userIntent.memo && ` — "${store.userIntent.memo}"`}
+                </div>
+                <button
+                  onClick={() => store.setStatus('intent', 0)}
+                  className="ml-3 text-[11px] font-semibold text-[#707072] hover:text-[#111111] transition-colors shrink-0"
+                >
+                  ✎ 수정
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Behind the Scenes — Nike dark editorial tile, 0px radius */}

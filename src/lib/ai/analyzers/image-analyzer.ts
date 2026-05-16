@@ -5,10 +5,10 @@
 
 import { generateObject } from 'ai'
 import { runWithFallback } from '@/lib/ai/router'
-import { AnalyzeSchema, type AnalyzeOutput } from '@/lib/ai/types'
+import { AnalyzeSchema, type AnalyzeOutput, type UserIntent } from '@/lib/ai/types'
 import {
   ANALYZE_SYSTEM_PROMPT,
-  ANALYZE_USER_PROMPT,
+  buildAnalyzePrompt,
 } from '@/lib/prompts/analyze'
 
 export type AnalyzeResult = AnalyzeOutput
@@ -19,11 +19,13 @@ export interface PreflightResult {
   warnings: string[]
 }
 
-/** 제품 이미지 분석 (vision) */
+/** 제품 이미지 분석 (vision) — v1.1: userIntent / refinement 옵션 추가 */
 export async function analyzeProductImage(params: {
   imageUrl?: string
   imageBase64?: string
   mode: 'quick' | 'studio'
+  userIntent?: UserIntent
+  refinement?: string
 }): Promise<AnalyzeResult> {
   if (!params.imageUrl && !params.imageBase64) {
     throw new Error('imageUrl 또는 imageBase64 중 하나는 필수입니다.')
@@ -36,6 +38,11 @@ export async function analyzeProductImage(params: {
   const imageContent = params.imageBase64 ?? params.imageUrl
   if (!imageContent) throw new Error('이미지 소스 누락')
 
+  const userPrompt = buildAnalyzePrompt({
+    userIntent: params.userIntent,
+    refinement: params.refinement,
+  })
+
   const result = await runWithFallback('analyze', (model) =>
     generateObject({
       model,
@@ -45,7 +52,7 @@ export async function analyzeProductImage(params: {
         {
           role: 'user',
           content: [
-            { type: 'text', text: ANALYZE_USER_PROMPT },
+            { type: 'text', text: userPrompt },
             { type: 'image', image: imageContent },
           ],
         },

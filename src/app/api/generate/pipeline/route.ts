@@ -25,7 +25,7 @@ import { generateTagline } from '@/lib/ai/generators/tagline-agent'
 import { streamDescription } from '@/lib/ai/generators/description-agent'
 import { fetchTrendKeywords } from '@/lib/trends/trend-fetcher'
 import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
-import type { PipelineEvent, PipelineStep } from '@/lib/ai/types'
+import { UserIntentSchema, type PipelineEvent, type PipelineStep } from '@/lib/ai/types'
 
 // ─── 런타임 설정 ────────────────────────────────────────────────────────────
 
@@ -38,6 +38,8 @@ const PipelineSchema = z.object({
   imageUrl: z.string().url().optional(),
   imageBase64: z.string().optional(),
   mode: z.enum(['quick', 'studio']).default('quick'),
+  // v1.1 — 사용자 의도 (L1)
+  userIntent: UserIntentSchema.optional(),
 })
 
 // ─── SSE 유틸 ───────────────────────────────────────────────────────────────
@@ -72,7 +74,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { imageUrl, imageBase64, mode } = parsed.data
+  const { imageUrl, imageBase64, mode, userIntent } = parsed.data
 
   // 크레딧 가드 (DEV_BYPASS_CREDITS=true 면 자동 통과)
   const operation = mode === 'studio' ? 'studio_text' : 'quick'
@@ -103,6 +105,8 @@ export async function POST(request: NextRequest) {
             mode,
             product_image_url: imageUrl ?? null,
             status: 'processing',
+            // v1.1 — 사용자 의도 저장 (없으면 빈 객체)
+            user_intent: userIntent ?? {},
           })
           .select('id')
           .single()
@@ -115,7 +119,12 @@ export async function POST(request: NextRequest) {
 
         // ── Step 2: analyze ────────────────────────────────────────────────
         emit({ type: 'progress', step: 'analyze', percent: 25 })
-        const analysis = await analyzeProductImage({ imageUrl, imageBase64, mode })
+        const analysis = await analyzeProductImage({
+          imageUrl,
+          imageBase64,
+          mode,
+          userIntent,
+        })
         emit({ type: 'analysis', data: analysis })
         await supabase.from('generations').insert({
           project_id: projectId,
@@ -133,6 +142,7 @@ export async function POST(request: NextRequest) {
             trendKeywords: [],
             style: analysis.style,
             platform: analysis.platform,
+            userIntent,
           }),
         ])
         emit({
@@ -154,6 +164,7 @@ export async function POST(request: NextRequest) {
           category: analysis.category,
           keywords: analysis.keywords,
           mood: analysis.mood,
+          userIntent,
         })
         emit({ type: 'tagline', data: taglineResult.tagline })
         await supabase.from('generations').insert({
@@ -171,6 +182,7 @@ export async function POST(request: NextRequest) {
           keywords: analysis.keywords,
           mode,
           targetAudience: analysis.targetAudience,
+          userIntent,
         })
 
         let lastEmittedLen = 0

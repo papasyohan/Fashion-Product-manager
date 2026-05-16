@@ -1,6 +1,10 @@
 /**
  * 한줄 홍보문구 생성 프롬프트 (기능 1개 = 파일 1개 원칙)
+ * v1.1: intent-injector 경유
  */
+
+import { appendIntentSection } from './intent-injector'
+import type { UserIntent } from '@/lib/ai/types'
 
 export const TAGLINE_SYSTEM_PROMPT = `당신은 한국 이커머스 전문 카피라이터입니다.
 35자 이내의 강력한 한줄 홍보문구를 작성합니다.
@@ -17,7 +21,11 @@ export const buildTaglinePrompt = (params: {
   category: string
   keywords: string[]
   mood?: string
-}) => `다음 제품의 한줄 홍보문구를 작성해주세요:
+  userIntent?: UserIntent
+  refinement?: string
+}) =>
+  appendIntentSection(
+    `다음 제품의 한줄 홍보문구를 작성해주세요:
 
 상품명: ${params.productName}
 카테고리: ${params.category}
@@ -29,4 +37,7 @@ export const buildTaglinePrompt = (params: {
   "tagline": "한줄 홍보문구 (35자 이하)",
   "charCount": 문자수(숫자),
   "seoKeywords": ["포함된 SEO 키워드1", "키워드2"]
-}`
+}`,
+    params.userIntent,
+    params.refinement,
+  )

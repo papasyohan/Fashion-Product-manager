@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { generateTagline } from '@/lib/ai/generators/tagline-agent'
+import { UserIntentSchema } from '@/lib/ai/types'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -13,6 +14,9 @@ const TaglineSchema = z.object({
   keywords: z.array(z.string()).default([]),
   mood: z.string().optional(),
   projectId: z.string().uuid().optional(),
+  userIntent: UserIntentSchema.optional(),
+  refinement: z.string().max(300).optional(),
+  parentId: z.string().uuid().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -27,14 +31,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { productName, category, keywords, mood, projectId } = parsed.data
-    const result = await generateTagline({ productName, category, keywords, mood })
+    const { productName, category, keywords, mood, projectId, userIntent, refinement, parentId } = parsed.data
+    const result = await generateTagline({
+      productName,
+      category,
+      keywords,
+      mood,
+      userIntent,
+      refinement,
+    })
 
     if (projectId) {
       await supabase.from('generations').insert({
         project_id: projectId,
         type: 'tagline',
         payload: result as unknown as Record<string, unknown>,
+        parent_id: parentId ?? null,
+        refinement_prompt: refinement ?? null,
       })
     }
 

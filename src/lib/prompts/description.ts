@@ -1,6 +1,10 @@
 /**
  * 상세 설명 생성 프롬프트 (기능 1개 = 파일 1개 원칙)
+ * v1.1: intent-injector 경유
  */
+
+import { appendIntentSection } from './intent-injector'
+import type { UserIntent } from '@/lib/ai/types'
 
 export const DESCRIPTION_SYSTEM_PROMPT = `당신은 한국 이커머스 전문 상품 설명 작가입니다.
 스마트스토어, 쿠팡에 바로 사용 가능한 상세 설명을 작성합니다.
@@ -22,6 +26,8 @@ export const buildDescriptionPrompt = (params: {
   mode: 'quick' | 'studio'
   targetAudience?: string
   specs?: Record<string, string | string[]>
+  userIntent?: UserIntent
+  refinement?: string
 }) => {
   const targetLength = params.mode === 'studio' ? '600~800자' : '400~600자'
 
@@ -31,7 +37,7 @@ export const buildDescriptionPrompt = (params: {
         .join('\n')}`
     : ''
 
-  return `다음 제품의 상세 설명을 작성해주세요 (${targetLength}):
+  const base = `다음 제품의 상세 설명을 작성해주세요 (${targetLength}):
 
 상품명: ${params.productName}
 홍보문구: ${params.tagline}
@@ -45,4 +51,6 @@ export const buildDescriptionPrompt = (params: {
   "charCount": 문자수(숫자),
   "highlights": ["핵심 셀링포인트1", "셀링포인트2", "셀링포인트3"]
 }`
+
+  return appendIntentSection(base, params.userIntent, params.refinement)
 }

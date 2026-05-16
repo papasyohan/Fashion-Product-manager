@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { analyzeProductImage } from '@/lib/ai/analyzers/image-analyzer'
+import { UserIntentSchema } from '@/lib/ai/types'
 
 // Edge Runtime — 10초 timeout 회피
 export const runtime = 'edge'
@@ -13,6 +14,10 @@ const AnalyzeSchema = z.object({
   imageBase64: z.string().optional(),
   projectId: z.string().uuid().optional(),
   mode: z.enum(['quick', 'studio']).default('quick'),
+  // v1.1 — 의도 / 보정 / 변형 트리
+  userIntent: UserIntentSchema.optional(),
+  refinement: z.string().max(300).optional(),
+  parentId: z.string().uuid().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -27,16 +32,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { imageUrl, imageBase64, projectId, mode } = parsed.data
+    const { imageUrl, imageBase64, projectId, mode, userIntent, refinement, parentId } = parsed.data
 
-    const result = await analyzeProductImage({ imageUrl, imageBase64, mode })
+    const result = await analyzeProductImage({
+      imageUrl,
+      imageBase64,
+      mode,
+      userIntent,
+      refinement,
+    })
 
-    // DB 저장 (projectId 있을 때)
+    // DB 저장 (projectId 있을 때) — v1.1: parent_id / refinement_prompt 기록
     if (projectId) {
       await supabase.from('generations').insert({
         project_id: projectId,
         type: 'analyze',
         payload: result as unknown as Record<string, unknown>,
+        parent_id: parentId ?? null,
+        refinement_prompt: refinement ?? null,
       })
     }
 

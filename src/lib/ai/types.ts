@@ -5,6 +5,34 @@
 
 import { z } from 'zod'
 
+// ─── v1.1: 사용자 의도 + 보정 지시 (UX Customization Loop) ─────────────────
+
+export const UserIntentSchema = z.object({
+  tone: z.string().max(20).optional(),         // L1 — 캐주얼 / 감성 / 프리미엄 / 위트
+  audience: z.string().max(40).optional(),     // L1 — 20대 여성, 30대 직장인 등
+  channel: z.string().max(20).optional(),      // L1 — naver / coupang / musinsa / instagram
+  memo: z.string().max(200).optional(),        // L1 — 자유 메모
+})
+export type UserIntent = z.infer<typeof UserIntentSchema>
+
+/** L4 — 자연어 보정 지시 ("더 짧게", "30대 남성 타깃으로 다시" 등) */
+export const RefinementSchema = z.string().max(300).optional()
+
+/**
+ * 모든 generator 라우트의 Zod 스키마에 spread 로 합쳐 사용:
+ *
+ *   const NamingSchema = z.object({
+ *     category: z.string(),
+ *     ...IntentRefinementFields,
+ *   })
+ */
+export const IntentRefinementFields = {
+  userIntent: UserIntentSchema.optional(),
+  refinement: z.string().max(300).optional(),
+} as const
+
+// ─── 기존 정의 계속 ────────────────────────────────────────────────────────
+
 // ─── 작업 식별자 (env 키 prefix) ────────────────────────────────────────────
 
 export type AITask =

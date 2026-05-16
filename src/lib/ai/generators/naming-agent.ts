@@ -5,7 +5,7 @@
 
 import { generateObject } from 'ai'
 import { runWithFallback } from '@/lib/ai/router'
-import { NamingSchema } from '@/lib/ai/types'
+import { NamingSchema, type UserIntent } from '@/lib/ai/types'
 import { NAMING_SYSTEM_PROMPT, buildNamingPrompt } from '@/lib/prompts/naming'
 
 export interface NamingResult {
@@ -20,6 +20,8 @@ export async function generateProductNames(params: {
   style?: string
   platform?: string
   forbiddenTerms?: string[]
+  userIntent?: UserIntent
+  refinement?: string
 }): Promise<NamingResult> {
   const result = await runWithFallback('naming', (model) =>
     generateObject({

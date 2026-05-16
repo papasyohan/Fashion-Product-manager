@@ -5,6 +5,8 @@ import { Check, Copy, Share2, MessageSquare, FileCode2, Download, Loader2, Exter
 import { Button } from '@/components/ui/button'
 import { ShareSheet } from '@/components/share-sheet'
 import { ThumbnailGrid, type ThumbnailItem } from '@/components/thumbnail-grid'
+import { EditableText } from '@/components/editable-text'
+import { RegenerateMenu } from '@/components/regenerate-menu'
 import type { GenerationResult } from '@/store/studio'
 
 interface ResultCardProps {
@@ -14,6 +16,14 @@ interface ResultCardProps {
   onSelectName: (index: number) => void
   onRegenerate?: () => void
   onSave?: () => void
+
+  // v1.1 — 인라인 편집 + 부분 재생성 핸들러 (모두 선택. 미전달 시 해당 기능 비활성)
+  onEditName?: (index: number, newName: string) => void
+  onEditTagline?: (newTagline: string) => void
+  onEditDescription?: (newDescription: string) => void
+  onRegenerateNaming?: (refinement?: string) => Promise<void>
+  onRegenerateTagline?: (refinement?: string) => Promise<void>
+  onRegenerateDescription?: (refinement?: string) => Promise<void>
 }
 
 export function ResultCard({
@@ -23,6 +33,12 @@ export function ResultCard({
   onSelectName,
   onRegenerate,
   onSave,
+  onEditName,
+  onEditTagline,
+  onEditDescription,
+  onRegenerateNaming,
+  onRegenerateTagline,
+  onRegenerateDescription,
 }: ResultCardProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
@@ -112,48 +128,99 @@ export function ResultCard({
 
       {/* 01: 상품명 3종 */}
       <section className="mb-8">
-        <SectionHeader number="01" title="상품명 3종" subtitle="트렌드 반영" />
+        <SectionHeader
+          number="01"
+          title="상품명 3종"
+          subtitle="트렌드 반영"
+          action={onRegenerateNaming ? (
+            <RegenerateMenu section="상품명" onRegenerate={onRegenerateNaming} />
+          ) : undefined}
+        />
         <div
           className="grid md:grid-cols-3"
           style={{ border: '1px solid #e5e5e5' }}
         >
-          {result.names.map((n, i) => (
-            <button
-              key={i}
-              onClick={() => onSelectName(i)}
-              data-testid="product-name-card"
-              className="text-left p-5 transition-colors hover:bg-[#f5f5f5]"
-              style={{
-                backgroundColor: result.selectedNameIndex === i ? '#f5f5f5' : '#ffffff',
-                borderRight: i < result.names.length - 1 ? '1px solid #e5e5e5' : undefined,
-                borderTop: result.selectedNameIndex === i ? '3px solid #111111' : '3px solid transparent',
-              }}
-            >
-              <div className="text-[11px] font-semibold text-[#9e9ea0] uppercase tracking-widest mb-1.5 flex items-center gap-2">
-                Option {i + 1}
-                {result.selectedNameIndex === i && (
-                  <span className="px-1.5 py-0.5 bg-[#111111] text-white text-[9px] font-black tracking-widest">
-                    선택됨
-                  </span>
-                )}
+          {result.names.map((n, i) => {
+            const isSelected = result.selectedNameIndex === i
+            return (
+              <div
+                key={i}
+                data-testid="product-name-card"
+                onClick={() => onSelectName(i)}
+                className="text-left p-5 transition-colors cursor-pointer hover:bg-[#f5f5f5]"
+                style={{
+                  backgroundColor: isSelected ? '#f5f5f5' : '#ffffff',
+                  borderRight: i < result.names.length - 1 ? '1px solid #e5e5e5' : undefined,
+                  borderTop: isSelected ? '3px solid #111111' : '3px solid transparent',
+                }}
+              >
+                <div className="text-[11px] font-semibold text-[#9e9ea0] uppercase tracking-widest mb-1.5 flex items-center gap-2">
+                  Option {i + 1}
+                  {isSelected && (
+                    <span className="px-1.5 py-0.5 bg-[#111111] text-white text-[9px] font-black tracking-widest">
+                      선택됨
+                    </span>
+                  )}
+                </div>
+                {/* 클릭 = 편집. onEditName 미전달 시 read-only */}
+                <div
+                  className="mb-2 leading-snug"
+                  onClick={(e) => onEditName && e.stopPropagation()}
+                >
+                  {onEditName ? (
+                    <EditableText
+                      value={n.name}
+                      onSave={(v) => onEditName(i, v)}
+                      maxLength={40}
+                      className="text-[18px] font-bold text-[#111111] block"
+                      placeholder="상품명을 입력하세요"
+                      showEditIcon={false}
+                    />
+                  ) : (
+                    <div className="text-[18px] font-bold text-[#111111]">{n.name}</div>
+                  )}
+                </div>
+                <div className="text-[12px] text-[#707072]">{n.trend}</div>
               </div>
-              <div className="text-[18px] font-bold text-[#111111] mb-2 leading-snug">{n.name}</div>
-              <div className="text-[12px] text-[#707072]">{n.trend}</div>
-            </button>
-          ))}
+            )
+          })}
         </div>
       </section>
 
       {/* 02: 한줄 홍보문구 */}
       <section className="mb-8">
-        <SectionHeader number="02" title="한줄 홍보문구" subtitle="35자 이내" />
+        <SectionHeader
+          number="02"
+          title="한줄 홍보문구"
+          subtitle="35자 이내"
+          action={onRegenerateTagline ? (
+            <RegenerateMenu section="홍보문구" onRegenerate={onRegenerateTagline} />
+          ) : undefined}
+        />
         <div
           className="p-8 relative group"
           style={{ backgroundColor: '#111111' }}
         >
-          <p className="text-[28px] font-black text-white leading-tight tracking-tight">
-            &ldquo;{result.tagline}&rdquo;
-          </p>
+          {onEditTagline ? (
+            <div className="text-[28px] font-black text-white leading-tight tracking-tight">
+              <span className="text-white">&ldquo;</span>
+              <span className="inline-block">
+                <EditableText
+                  value={result.tagline}
+                  onSave={onEditTagline}
+                  maxLength={35}
+                  className="text-[28px] font-black text-white leading-tight tracking-tight"
+                  placeholder="홍보문구"
+                  showEditIcon={false}
+                />
+              </span>
+              <span className="text-white">&rdquo;</span>
+            </div>
+          ) : (
+            <p className="text-[28px] font-black text-white leading-tight tracking-tight">
+              &ldquo;{result.tagline}&rdquo;
+            </p>
+          )}
           <div className="mt-4 flex items-center justify-between">
             <span className="text-[12px] text-[#9e9ea0]">
               {result.tagline.length}자 · 검색 노출 최적화됨
@@ -174,14 +241,32 @@ export function ResultCard({
 
       {/* 03: 상세 설명 */}
       <section className="mb-8">
-        <SectionHeader number="03" title="상세 설명" />
+        <SectionHeader
+          number="03"
+          title="상세 설명"
+          action={onRegenerateDescription ? (
+            <RegenerateMenu section="상세 설명" onRegenerate={onRegenerateDescription} />
+          ) : undefined}
+        />
         <div
           className="p-6 relative group"
           style={{ border: '1px solid #e5e5e5', backgroundColor: '#ffffff' }}
         >
-          <pre className="text-[13px] text-[#111111] leading-relaxed whitespace-pre-wrap">
-            {result.description}
-          </pre>
+          {onEditDescription ? (
+            <EditableText
+              value={result.description}
+              onSave={onEditDescription}
+              multiline
+              maxLength={800}
+              className="text-[13px] text-[#111111] leading-relaxed whitespace-pre-wrap block"
+              placeholder="상세 설명을 입력하세요"
+              showEditIcon={false}
+            />
+          ) : (
+            <pre className="text-[13px] text-[#111111] leading-relaxed whitespace-pre-wrap font-sans">
+              {result.description}
+            </pre>
+          )}
           <button
             onClick={() => copyToClipboard(result.description, 'description')}
             className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-[#f5f5f5] text-[#9e9ea0] hover:text-[#111111]"
@@ -363,10 +448,12 @@ function SectionHeader({
   number,
   title,
   subtitle,
+  action,
 }: {
   number: string
   title: string
   subtitle?: string
+  action?: React.ReactNode
 }) {
   return (
     <div className="flex items-center gap-2.5 mb-4">
@@ -376,12 +463,13 @@ function SectionHeader({
       >
         {number}
       </div>
-      <h2 className="text-[20px] font-black text-[#111111]">
+      <h2 className="text-[20px] font-black text-[#111111] flex-1">
         {title}
         {subtitle && (
           <span className="text-[#9e9ea0] font-medium text-[14px] ml-2">— {subtitle}</span>
         )}
       </h2>
+      {action}
     </div>
   )
 }

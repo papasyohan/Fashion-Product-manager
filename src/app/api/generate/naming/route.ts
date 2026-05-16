@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { generateProductNames } from '@/lib/ai/generators/naming-agent'
 import { fetchTrendKeywords } from '@/lib/trends/trend-fetcher'
+import { UserIntentSchema } from '@/lib/ai/types'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -14,6 +15,10 @@ const NamingSchema = z.object({
   style: z.string().optional(),
   platform: z.string().optional(),
   projectId: z.string().uuid().optional(),
+  // v1.1 — 의도 / 보정 / 변형 트리
+  userIntent: UserIntentSchema.optional(),
+  refinement: z.string().max(300).optional(),
+  parentId: z.string().uuid().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -28,7 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { category, keywords, style, platform, projectId } = parsed.data
+    const { category, keywords, style, platform, projectId, userIntent, refinement, parentId } = parsed.data
 
     // 트렌드 키워드 병렬 fetch
     const { keywords: trendKeywords } = await fetchTrendKeywords({ category })
@@ -39,6 +44,8 @@ export async function POST(request: NextRequest) {
       trendKeywords,
       style,
       platform,
+      userIntent,
+      refinement,
     })
 
     if (projectId) {
@@ -46,6 +53,8 @@ export async function POST(request: NextRequest) {
         project_id: projectId,
         type: 'naming',
         payload: result as unknown as Record<string, unknown>,
+        parent_id: parentId ?? null,
+        refinement_prompt: refinement ?? null,
       })
     }
 

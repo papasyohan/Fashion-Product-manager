@@ -5,7 +5,7 @@
 
 import { generateObject } from 'ai'
 import { runWithFallback } from '@/lib/ai/router'
-import { TaglineSchema } from '@/lib/ai/types'
+import { TaglineSchema, type UserIntent } from '@/lib/ai/types'
 import { TAGLINE_SYSTEM_PROMPT, buildTaglinePrompt } from '@/lib/prompts/tagline'
 
 export interface TaglineResult {
@@ -20,6 +20,8 @@ export async function generateTagline(params: {
   category: string
   keywords: string[]
   mood?: string
+  userIntent?: UserIntent
+  refinement?: string
 }): Promise<TaglineResult> {
   const result = await runWithFallback('tagline', (model) =>
     generateObject({
