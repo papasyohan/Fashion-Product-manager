@@ -194,23 +194,158 @@ interface AnalysisOverride {
 
 생성 결과를 덮어쓰지 않고 누적. parent_id 트리로 시간순 정렬.
 
+### 데이터 모델
+
+```typescript
+interface VariantsState {
+  naming:      NamingResult[]       // 각 항목은 3종 상품명 1세트
+  tagline:     TaglineResult[]
+  description: DescriptionResult[]
+}
+interface VariantsActiveIndex {
+  naming: number       // 현재 표시 중인 variant 인덱스
+  tagline: number
+  description: number
+}
 ```
-01. 상품명 ─[↻ 다시]─
-  ▾ 1차 (12:34)
-    ○ A1  ● A2 (선택됨)  ○ A3
-  ▾ 2차 (12:36) — "더 트렌디하게"
-    ○ B1  ○ B2  ○ B3
+
+- 초기 생성: `variants.naming = [first]`, `activeIndex.naming = 0`
+- 재생성 시: `variants.naming.push(new)`, `activeIndex.naming = length - 1`
+- `result.names` 는 `variants.naming[activeIndex.naming].names` 의 derived view
+- 사용자가 트레이에서 다른 variant 클릭 시 `selectVariant` 액션 → `result` 도 함께 갱신
+
+### UI 사양
+
+각 결과 섹션 헤더 아래 variants nav 추가:
+
 ```
+01. 상품명 3종 ─────────────[📌 Lock]─[↻ 다시]──
+  ┌────┬────┬────────────────┐
+  │ 1차 │ ●2차 │ + 추가 (3차)  │  ← 가로 chip 행
+  └────┴────┴────────────────┘
+  (활성 variant 의 3개 옵션이 아래 카드로 표시)
+```
+
+- variant chip: 1차 / 2차 / 3차…
+- 활성 변형은 검정 배경 + 흰 글자
+- hover 시 refinement 텍스트가 툴팁으로 노출 (예: "더 트렌디하게")
+- 1차만 있으면 nav 숨김 (UI 노이즈 회피)
+
+### 액션
+
+```typescript
+addVariant<K>(kind: K, result: VariantsState[K][number], refinement?: string) => void
+selectVariant<K>(kind: K, index: number) => void
+clearVariants<K>(kind: K) => void   // 1차만 남기고 정리
+```
+
+---
+
+## 6-A. Layer 5-B — Lock & Iterate (Phase 2)
+
+각 결과 섹션 헤더에 📌 잠금 토글. 잠긴 상태에서는:
+- RegenerateMenu 비활성 (시각적으로 회색 + 클릭 차단)
+- 전체 재생성 시 해당 섹션 스킵 (현재 결과 유지)
+
+### 신규 액션: "전체 재생성"
+
+결과 화면 상단에 [↻ 모든 결과 다시 생성] 버튼 (잠겨있지 않은 섹션이 1개 이상일 때만 활성).
+
+```typescript
+async function regenerateAll() {
+  const tasks: Promise<unknown>[] = []
+  if (!locks.naming)      tasks.push(handleRegenerateNaming())
+  if (!locks.tagline)     tasks.push(handleRegenerateTagline())
+  if (!locks.description) tasks.push(handleRegenerateDescription())
+  await Promise.all(tasks)
+}
+```
+
+분석을 수정한 후 토스트의 "다시 생성" 도 이 동일 액션을 호출.
 
 ---
 
 ## 7. Layer 6 — Studio Pin & Re-roll (Phase 2)
 
+### UI 사양
 ```
-[1:1 📌]  [4:5 ○]  [9:16 ○]  [16:9 📌]
-📝 핀 안 된 사진은 어떻게?
-[textarea] → 핀 유지 + 나머지 재생성
+┌─ 썸네일 ─[↻ 핀 안 된 것만 다시]──
+│  [1:1 📌] [4:5 ○] [9:16 ○] [16:9 📌]   ← 클릭으로 핀 토글
+│
+│  핀 안 된 사진은 어떻게?
+│  [textarea — refinement, max 200]
+│
+│       [핀 유지 + 나머지 재생성]
+└─
 ```
+
+### 데이터 모델
+- 클라이언트 store: `Set<string>` (aspect ratio 기준)
+- `/api/generate/thumbnail` 요청 body 에 `pinnedAspectRatios: string[]` 추가
+- 서버: `aspectRatios.filter(ar => !pinned.includes(ar))` 만 재생성
+- 응답: 새로 생성된 것만 반환 → 클라이언트가 핀된 것과 머지
+
+### 4K 해상도 게이팅
+
+```
+[1K 무료] [2K Starter+] [4K Pro+ 🔒]
+```
+
+- 사용자 plan 미달 시 옵션 비활성 + 🔒 + 클릭 시 CreditGuardModal
+- 의도 입력 단계(IntentForm) 에 "썸네일 해상도" 컨트롤 추가 (Studio 모드만)
+- 현재 plan 은 `app-nav` 에서 표시 중인 정보 재활용
+
+---
+
+## 7-A. Layer 7 — Trend Keywords 사용자 편집 (Phase 2)
+
+### 위치
+AnalysisReviewCard 내부의 별도 섹션 "트렌드 키워드".
+
+### 데이터
+- 현재 trend-fetcher 는 카테고리별 정적 fallback 반환
+- store 에 `trendKeywords: string[]` 필드 추가
+- pipeline SSE 의 `names` 이벤트가 `trendTags` 를 함께 emit (이미 함)
+- 사이드바에서 chip 추가/삭제 가능
+- 부분 재생성 시 `keywords` 와 `trendKeywords` 둘 다 전달
+
+---
+
+## 7-B. Layer 8 — 상세페이지 풀 노션 스타일 에디터 (Phase 2 · C=3 결정)
+
+### 컨셉
+정적 HTML 템플릿(현재) → **사용자가 자유롭게 편집/순서변경/추가/삭제 가능한 섹션 기반 에디터**.
+
+LLM 으로 섹션 내용 재생성은 Phase 3 (G5 상세페이지 LLM 조립) 로 이관 — Phase 2 는 **편집기 자체**에 집중.
+
+### 섹션 타입
+```typescript
+type DetailSection =
+  | { id: string, type: 'hero',         title: string, tagline: string, image?: string }
+  | { id: string, type: 'features',     heading: string, items: string[] }
+  | { id: string, type: 'description',  content: string }
+  | { id: string, type: 'keywords',     items: string[] }
+  | { id: string, type: 'reviews',      placeholder: string }
+  | { id: string, type: 'cta',          label: string, url?: string }
+  | { id: string, type: 'text',         heading?: string, content: string }
+  | { id: string, type: 'image',        url: string, caption?: string }
+```
+
+### 컴포넌트 구조
+- `DetailPageEditor` (메인) — 섹션 배열을 받아 렌더링
+- 각 섹션 타입별 sub-component (`HeroBlock`, `FeaturesBlock`, ...)
+- 모든 텍스트는 `EditableText` 재사용
+
+### 인터랙션
+1. **드래그 정렬** — 섹션 좌측 핸들(⋮⋮) 드래그. HTML5 native drag-and-drop.
+2. **섹션 추가** — 섹션 사이에 hover 시 [+ 추가] 라인 노출 → 풀다운으로 type 선택
+3. **섹션 삭제** — 섹션 우상단 ⋯ 메뉴에서 "삭제"
+4. **인라인 편집** — 모든 텍스트 클릭으로 EditableText 활성
+
+### 저장 & 내보내기
+- 편집 결과는 클라이언트 store (`detailPageSections`) 에 저장
+- "HTML 내보내기" 버튼 → 기존 `assembleDetailPage` 함수에 sections 배열을 전달하여 HTML 생성
+- "프로젝트와 함께 저장" 클릭 시 `/api/generate/detail-page` 호출 (sections payload 추가)
 
 ---
 
@@ -262,3 +397,55 @@ Phase 1 측정용:
 
 적용 후 `pnpm dlx supabase gen types --project-id <ID> > src/types/supabase.ts` 로 타입 재생성 권장.
 Phase 1 에서는 수동 타입 정의로 진행 (`src/types/supabase.ts` 직접 수정).
+
+**Phase 2 추가 마이그레이션 필요 없음** — 007 이 이미 parent_id / locked / is_pinned 모두 추가했음.
+
+---
+
+## 12. Phase 2 컴포넌트 위치 매핑
+
+| 컴포넌트 | 경로 | Layer |
+|---------|------|-------|
+| `VariantsTray` | `src/components/variants-tray/` | L5 |
+| `LockToggle` | (인라인, SectionHeader 의 prop) | L5-B |
+| `ThumbnailPinControls` | `src/components/thumbnail-grid/` 내부 확장 | L6 |
+| `ResolutionPicker` | `src/components/resolution-picker/` (또는 IntentForm 내부) | L6 |
+| `TrendKeywordsEditor` | `AnalysisReviewCard` 내부 별도 섹션 | L7 |
+| `DetailPageEditor` | `src/components/detail-page-editor/` | L8 |
+| `DetailPageEditor/{Hero,Features,Description,Keywords,Reviews,CTA,Text,Image}Block` | 같은 폴더 sub-component | L8 |
+
+## 13. Phase 2 store 확장
+
+```typescript
+interface StudioStore {
+  // ... Phase 1까지 ...
+
+  // L5 Variants
+  variants: {
+    naming: NamingResult[]
+    tagline: TaglineResult[]
+    description: DescriptionResult[]
+  }
+  activeIndex: { naming: number; tagline: number; description: number }
+  addVariant<K>(kind: K, result: any, refinement?: string): void
+  selectVariant<K>(kind: K, index: number): void
+
+  // L5-B Locks
+  locks: { naming: boolean; tagline: boolean; description: boolean }
+  toggleLock(kind: 'naming' | 'tagline' | 'description'): void
+
+  // L6 Thumbnail Pin
+  pinnedAspectRatios: Set<string>
+  togglePin(aspectRatio: string): void
+  thumbnailResolution: '1K' | '2K' | '4K'
+  setThumbnailResolution(r: '1K' | '2K' | '4K'): void
+
+  // L7 Trend Keywords
+  trendKeywords: string[]
+  setTrendKeywords(items: string[]): void
+
+  // L8 Detail Page Editor
+  detailPageSections: DetailSection[] | null
+  setDetailPageSections(sections: DetailSection[]): void
+}
+```

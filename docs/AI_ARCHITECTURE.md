@@ -517,7 +517,8 @@ intent-injector 는 순수 함수 (외부 API 호출 없음) → 기존 Edge Run
 
 | 날짜 | 변경 | 커밋 |
 |------|------|------|
-| 2026-05-14 | v1.1 UX Customization Phase 1 — 의도 주입 + 분석 편집 + 인라인 편집 + 부분 재생성 | (current) |
+| 2026-05-16 | v1.1 Phase 2 — Variants Tray + Lock + 썸네일 Pin · 4K 게이팅 + Trend 편집 + 노션 에디터 | (current) |
+| 2026-05-14 | v1.1 UX Customization Phase 1 — 의도 주입 + 분석 편집 + 인라인 편집 + 부분 재생성 | `01b8377` |
 | 2026-05-14 | Vercel AI SDK v6 도입 / Edge + SSE 스트리밍 / 멀티 프로바이더 라우터 | `5392ee2` |
 | 2026-05-13 | DEV_BYPASS_CREDITS 환경변수 추가 | `6596da5` |
 | 2026-05-13 | Nike 디자인 시스템 전면 적용 | `c71ca6a`, `1b49cec` |

@@ -206,9 +206,14 @@ function StudioPageInner() {
             return
           case 'names':
             names = event.data
+            // Phase 2 — 1차 variant 로 저장 (덮어쓰지 않고 후속 재생성 시 누적)
+            store.addNamingVariant(event.data)
+            // 트렌드 키워드도 분석 사이드바에 노출
+            store.setTrendKeywords(event.trendTags ?? [])
             return
           case 'tagline':
             tagline = event.data
+            store.addTaglineVariant(event.data)
             return
           case 'description_chunk':
             descriptionBuffer += event.text
@@ -218,6 +223,7 @@ function StudioPageInner() {
           case 'description_done':
             descriptionBuffer = event.data
             highlights = event.highlights
+            store.addDescriptionVariant(event.data)
             return
           case 'error':
             throw new Error(event.message)
@@ -305,7 +311,7 @@ function StudioPageInner() {
     store.patchResult({ description: newDescription })
   }, [store])
 
-  // ─── v1.1: 부분 재생성 핸들러 ────────────────────────────────────────────
+  // ─── v1.1: 부분 재생성 핸들러 (Phase 2 — addVariant 사용으로 변형 누적) ─
   const effectiveAnalysis = store.getEffectiveAnalysis()
 
   const handleRegenerateNaming = useCallback(async (refinement?: string) => {
@@ -325,7 +331,8 @@ function StudioPageInner() {
       })
       if (!res.ok) throw new Error('상품명 재생성 실패')
       const data = await res.json()
-      store.patchResult({ names: data.names, selectedNameIndex: 0 })
+      // Phase 2 — 덮어쓰지 않고 변형으로 누적
+      store.addNamingVariant(data.names, refinement)
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : '재생성 실패')
     }
@@ -350,7 +357,7 @@ function StudioPageInner() {
       })
       if (!res.ok) throw new Error('홍보문구 재생성 실패')
       const data = await res.json()
-      store.patchResult({ tagline: data.tagline })
+      store.addTaglineVariant(data.tagline, refinement)
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : '재생성 실패')
     }
@@ -378,12 +385,84 @@ function StudioPageInner() {
       })
       if (!res.ok) throw new Error('상세설명 재생성 실패')
       const data = await res.json()
-      store.patchResult({ description: data.description })
+      store.addDescriptionVariant(data.description, refinement)
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : '재생성 실패')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.projectId, store.userIntent, store.result, store.mode, effectiveAnalysis])
+
+  // Phase 2 — 전체 재생성 (잠긴 섹션은 스킵)
+  const handleRegenerateAll = useCallback(async () => {
+    const tasks: Promise<unknown>[] = []
+    if (!store.locks.naming)      tasks.push(handleRegenerateNaming())
+    if (!store.locks.tagline)     tasks.push(handleRegenerateTagline())
+    if (!store.locks.description) tasks.push(handleRegenerateDescription())
+    await Promise.all(tasks)
+  }, [store.locks, handleRegenerateNaming, handleRegenerateTagline, handleRegenerateDescription])
+
+  // Phase 2 — 썸네일 핀 재롤
+  const handleRerollThumbnails = useCallback(async (refinement: string) => {
+    if (!store.projectId || !store.uploadedImageBase64 || !store.result) return
+    try {
+      const res = await fetch('/api/generate/thumbnail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: store.projectId,
+          imageBase64: store.uploadedImageBase64,
+          imageUrl: store.uploadedImageUrl,
+          analysis: {
+            category: effectiveAnalysis.category ?? '상품',
+            colors: [],
+            style: effectiveAnalysis.style ?? '',
+            mood: '',
+            keyFeatures: effectiveAnalysis.keyFeatures ?? [],
+            keywords: effectiveAnalysis.keywords ?? [],
+          },
+          aspectRatios: ['1:1', '4:5', '9:16', '16:9'],
+          pinnedAspectRatios: Array.from(store.pinnedAspectRatios),
+          count: 1,
+          resolution: store.thumbnailResolution,
+          refinement: refinement || undefined,
+        }),
+      })
+      if (!res.ok) {
+        if (res.status === 402) {
+          const err = await res.json()
+          const gr = err.guardResult as CreditGuardResult
+          setGuardModal({
+            open: true,
+            result: gr,
+            reason: gr?.reason?.includes('해상도') ? 'plan_required' : 'insufficient_credits',
+          })
+          return
+        }
+        throw new Error('썸네일 재생성 실패')
+      }
+      const data = await res.json()
+      const newThumbs = (data.thumbnails ?? []) as Array<{
+        url: string; width: number; height: number; aspect_ratio: string
+      }>
+      // 핀 외 비율 결과를 기존 썸네일과 머지 (핀 비율은 유지)
+      const pinnedSet = store.pinnedAspectRatios
+      const merged = [
+        ...(store.result.thumbnails ?? []).filter((t) => pinnedSet.has(t.ratio)),
+        ...newThumbs.map((t) => ({
+          ratio: t.aspect_ratio,
+          label: t.aspect_ratio,
+          size: `${t.width}×${t.height}`,
+          url: t.url,
+          width: t.width,
+          height: t.height,
+        })),
+      ]
+      store.patchResult({ thumbnails: merged, primaryThumbnailUrl: merged[0]?.url })
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '썸네일 재생성 실패')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.projectId, store.uploadedImageBase64, store.uploadedImageUrl, store.result, store.pinnedAspectRatios, store.thumbnailResolution, effectiveAnalysis])
 
   // ─── 결과 화면 ────────────────────────────────────────────────────────
 
@@ -420,6 +499,32 @@ function StudioPageInner() {
               onRegenerateNaming={handleRegenerateNaming}
               onRegenerateTagline={handleRegenerateTagline}
               onRegenerateDescription={handleRegenerateDescription}
+
+              // Phase 2
+              variantsCount={{
+                naming: store.variants.naming.length,
+                tagline: store.variants.tagline.length,
+                description: store.variants.description.length,
+              }}
+              variantsActive={store.activeIndex}
+              variantsRefinements={{
+                naming: store.variants.naming.map((v) => v.refinement),
+                tagline: store.variants.tagline.map((v) => v.refinement),
+                description: store.variants.description.map((v) => v.refinement),
+              }}
+              onSelectVariant={(kind, i) => {
+                if (kind === 'naming')      store.selectNamingVariant(i)
+                if (kind === 'tagline')     store.selectTaglineVariant(i)
+                if (kind === 'description') store.selectDescriptionVariant(i)
+              }}
+              locks={store.locks}
+              onToggleLock={store.toggleLock}
+              onRegenerateAll={handleRegenerateAll}
+              pinnedAspectRatios={store.pinnedAspectRatios}
+              onTogglePin={store.togglePin}
+              onRerollThumbnails={handleRerollThumbnails}
+              detailPageSections={store.detailPageSections}
+              onChangeDetailSections={store.setDetailPageSections}
             />
           </div>
 

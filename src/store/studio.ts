@@ -3,6 +3,22 @@
 import { create } from 'zustand'
 import type { UserIntent } from '@/lib/ai/types'
 
+// ─── v1.1 Phase 2 — Detail Page Editor 섹션 타입 ───────────────────────────
+
+export type DetailSection =
+  | { id: string; type: 'hero';        title: string; tagline: string; image?: string }
+  | { id: string; type: 'features';    heading: string; items: string[] }
+  | { id: string; type: 'description'; content: string }
+  | { id: string; type: 'keywords';    items: string[] }
+  | { id: string; type: 'reviews';     placeholder: string }
+  | { id: string; type: 'cta';         label: string; url?: string }
+  | { id: string; type: 'text';        heading?: string; content: string }
+  | { id: string; type: 'image';       url: string; caption?: string }
+
+export type DetailSectionType = DetailSection['type']
+export type SectionKind = 'naming' | 'tagline' | 'description'
+export type Resolution = '1K' | '2K' | '4K'
+
 // ─── 타입 정의 ─────────────────────────────────────────────────────────────
 
 export type StudioMode = 'quick' | 'studio'
@@ -82,6 +98,19 @@ export interface StudioStore {
   /** 인라인 편집된 generation id 추적 — DB user_edited 동기화용 */
   userEditedIds: Set<string>
 
+  // v1.1 Phase 2 — Variants (L5) / Locks (L5-B) / Pin (L6) / Trend (L7) / Detail Page (L8)
+  variants: {
+    naming: Array<{ data: GenerationResult['names']; refinement?: string; ts: number }>
+    tagline: Array<{ data: string; refinement?: string; ts: number }>
+    description: Array<{ data: string; refinement?: string; ts: number }>
+  }
+  activeIndex: { naming: number; tagline: number; description: number }
+  locks: { naming: boolean; tagline: boolean; description: boolean }
+  pinnedAspectRatios: Set<string>
+  thumbnailResolution: Resolution
+  trendKeywords: string[]
+  detailPageSections: DetailSection[] | null
+
   // ─── Actions ───────────────────────────────────────────────────────────
   setMode: (mode: StudioMode) => void
   setImage: (url: string, base64?: string) => void
@@ -102,6 +131,19 @@ export interface StudioStore {
   markEdited: (genId: string) => void
   /** 결과의 특정 부분만 갱신 (인라인 편집 / 부분 재생성) */
   patchResult: (patch: Partial<GenerationResult>) => void
+
+  // Phase 2
+  addNamingVariant: (data: GenerationResult['names'], refinement?: string) => void
+  addTaglineVariant: (data: string, refinement?: string) => void
+  addDescriptionVariant: (data: string, refinement?: string) => void
+  selectNamingVariant: (i: number) => void
+  selectTaglineVariant: (i: number) => void
+  selectDescriptionVariant: (i: number) => void
+  toggleLock: (kind: SectionKind) => void
+  togglePin: (aspectRatio: string) => void
+  setThumbnailResolution: (r: Resolution) => void
+  setTrendKeywords: (items: string[]) => void
+  setDetailPageSections: (sections: DetailSection[] | null) => void
 }
 
 // ─── 초기 상태 ─────────────────────────────────────────────────────────────
@@ -119,6 +161,15 @@ const initialState = {
   analysisOriginal: null,
   analysisOverride: {} as AnalysisOverride,
   userEditedIds: new Set<string>(),
+
+  // Phase 2
+  variants: { naming: [], tagline: [], description: [] } as StudioStore['variants'],
+  activeIndex: { naming: 0, tagline: 0, description: 0 },
+  locks: { naming: false, tagline: false, description: false },
+  pinnedAspectRatios: new Set<string>(),
+  thumbnailResolution: '2K' as Resolution,
+  trendKeywords: [],
+  detailPageSections: null as DetailSection[] | null,
 }
 
 // ─── Store 정의 (전역 1개만 허용) ──────────────────────────────────────────
@@ -174,6 +225,84 @@ export const useStudioStore = create<StudioStore>((set, get) => ({
 
   patchResult: (patch) =>
     set((state) => (state.result ? { result: { ...state.result, ...patch } } : {})),
+
+  // ─── Phase 2 ────────────────────────────────────────────────────────────
+  addNamingVariant: (data, refinement) =>
+    set((state) => {
+      const entry = { data, refinement, ts: Date.now() }
+      const variants = { ...state.variants, naming: [...state.variants.naming, entry] }
+      const idx = variants.naming.length - 1
+      const activeIndex = { ...state.activeIndex, naming: idx }
+      const result = state.result ? { ...state.result, names: data, selectedNameIndex: 0 } : null
+      return { variants, activeIndex, result }
+    }),
+
+  addTaglineVariant: (data, refinement) =>
+    set((state) => {
+      const entry = { data, refinement, ts: Date.now() }
+      const variants = { ...state.variants, tagline: [...state.variants.tagline, entry] }
+      const idx = variants.tagline.length - 1
+      const activeIndex = { ...state.activeIndex, tagline: idx }
+      const result = state.result ? { ...state.result, tagline: data } : null
+      return { variants, activeIndex, result }
+    }),
+
+  addDescriptionVariant: (data, refinement) =>
+    set((state) => {
+      const entry = { data, refinement, ts: Date.now() }
+      const variants = { ...state.variants, description: [...state.variants.description, entry] }
+      const idx = variants.description.length - 1
+      const activeIndex = { ...state.activeIndex, description: idx }
+      const result = state.result ? { ...state.result, description: data } : null
+      return { variants, activeIndex, result }
+    }),
+
+  selectNamingVariant: (i) =>
+    set((state) => {
+      const v = state.variants.naming[i]
+      if (!v || !state.result) return {}
+      return {
+        activeIndex: { ...state.activeIndex, naming: i },
+        result: { ...state.result, names: v.data, selectedNameIndex: 0 },
+      }
+    }),
+
+  selectTaglineVariant: (i) =>
+    set((state) => {
+      const v = state.variants.tagline[i]
+      if (!v || !state.result) return {}
+      return {
+        activeIndex: { ...state.activeIndex, tagline: i },
+        result: { ...state.result, tagline: v.data },
+      }
+    }),
+
+  selectDescriptionVariant: (i) =>
+    set((state) => {
+      const v = state.variants.description[i]
+      if (!v || !state.result) return {}
+      return {
+        activeIndex: { ...state.activeIndex, description: i },
+        result: { ...state.result, description: v.data },
+      }
+    }),
+
+  toggleLock: (kind) =>
+    set((state) => ({ locks: { ...state.locks, [kind]: !state.locks[kind] } })),
+
+  togglePin: (aspectRatio) =>
+    set((state) => {
+      const next = new Set(state.pinnedAspectRatios)
+      if (next.has(aspectRatio)) next.delete(aspectRatio)
+      else next.add(aspectRatio)
+      return { pinnedAspectRatios: next }
+    }),
+
+  setThumbnailResolution: (r) => set({ thumbnailResolution: r }),
+
+  setTrendKeywords: (items) => set({ trendKeywords: items }),
+
+  setDetailPageSections: (sections) => set({ detailPageSections: sections }),
 }))
 
 // ─── 편의 셀렉터 ───────────────────────────────────────────────────────────

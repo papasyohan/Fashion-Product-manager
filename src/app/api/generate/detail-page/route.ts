@@ -12,6 +12,21 @@ import { createClient } from '@/lib/supabase/server'
 
 // ─── 스키마 ─────────────────────────────────────────────────────────────────
 
+/**
+ * v1.1 Phase 2 (L8): sections 가 있으면 그것 기준으로 HTML 조립, 없으면 기존 정적 템플릿.
+ */
+const SectionSchema = z.discriminatedUnion('type', [
+  z.object({ id: z.string(), type: z.literal('hero'),        title: z.string(), tagline: z.string(), image: z.string().optional() }),
+  z.object({ id: z.string(), type: z.literal('features'),    heading: z.string(), items: z.array(z.string()) }),
+  z.object({ id: z.string(), type: z.literal('description'), content: z.string() }),
+  z.object({ id: z.string(), type: z.literal('keywords'),    items: z.array(z.string()) }),
+  z.object({ id: z.string(), type: z.literal('reviews'),     placeholder: z.string() }),
+  z.object({ id: z.string(), type: z.literal('cta'),         label: z.string(), url: z.string().optional() }),
+  z.object({ id: z.string(), type: z.literal('text'),        heading: z.string().optional(), content: z.string() }),
+  z.object({ id: z.string(), type: z.literal('image'),       url: z.string(), caption: z.string().optional() }),
+])
+type DetailSection = z.infer<typeof SectionSchema>
+
 const DetailPageSchema = z.object({
   projectId: z.string().uuid(),
   productName: z.string(),
@@ -22,6 +37,8 @@ const DetailPageSchema = z.object({
   features: z.array(z.string()),
   thumbnailUrl: z.string().url().optional(),
   shopUrl: z.string().url().optional(),
+  /** v1.1 Phase 2 — 사용자가 노션 에디터로 편집한 섹션 배열 */
+  sections: z.array(SectionSchema).optional(),
 })
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
@@ -39,7 +56,10 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parsed.data
-    const html = assembleDetailPage(data)
+    // v1.1 Phase 2 — sections 가 있으면 그것 기준으로 조립
+    const html = data.sections && data.sections.length > 0
+      ? assembleFromSections(data.sections, { keywords: data.keywords })
+      : assembleDetailPage(data)
 
     // generations 테이블에 저장
     await supabase.from('generations').insert({
@@ -201,4 +221,96 @@ function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
+}
+
+// ─── v1.1 Phase 2 — Sections-based HTML 조립 ───────────────────────────────
+
+const SECTION_STYLES = `
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'Noto Sans KR', 'Pretendard Variable', sans-serif; background: #fff; color: #111; max-width: 860px; margin: 0 auto; }
+  section { padding: 56px 32px; }
+  .hero { text-align: center; background: #f5f5f5; padding: 72px 32px 60px; }
+  .hero h1 { font-size: clamp(28px, 5vw, 44px); font-weight: 900; letter-spacing: -1px; margin-bottom: 16px; line-height: 1.15; }
+  .hero p { font-size: 18px; color: #707072; max-width: 520px; margin: 0 auto 32px; line-height: 1.6; }
+  .hero img { width: 100%; max-width: 480px; display: block; margin: 0 auto 24px; object-fit: cover; }
+  .cta-btn { display: inline-block; padding: 16px 40px; background: #111; color: #fff; border-radius: 999px; font-weight: 700; font-size: 16px; text-decoration: none; }
+  .section-label { font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #9e9ea0; margin-bottom: 12px; }
+  .section-title { font-size: 28px; font-weight: 900; letter-spacing: -.5px; margin-bottom: 32px; }
+  .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .feature-item { padding: 24px; border: 1px solid #e5e5e5; }
+  .feature-num { font-size: 32px; font-weight: 800; color: #e5e5e5; margin-bottom: 8px; line-height: 1; }
+  .feature-text { font-size: 14px; color: #444; line-height: 1.7; }
+  .desc-text { font-size: 15px; line-height: 1.9; color: #333; white-space: pre-line; }
+  .keywords-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+  .keyword-tag { padding: 6px 14px; border: 1px solid #e5e5e5; font-size: 13px; color: #555; }
+  .review-placeholder { padding: 40px; border: 2px dashed #e5e5e5; text-align: center; color: #9e9ea0; }
+  .text-block h2 { font-size: 22px; font-weight: 900; margin-bottom: 16px; letter-spacing: -.3px; }
+  .text-block p { font-size: 15px; line-height: 1.8; color: #333; white-space: pre-line; }
+  .image-block { text-align: center; }
+  .image-block img { width: 100%; max-width: 720px; display: block; margin: 0 auto; }
+  .image-block figcaption { font-size: 12px; color: #9e9ea0; margin-top: 12px; }
+  footer { padding: 32px; background: #111; color: #707072; font-size: 11px; text-align: center; line-height: 1.8; }
+  footer strong { color: #9e9ea0; }
+`
+
+function assembleFromSections(
+  sections: DetailSection[],
+  meta: { keywords: string[] },
+): string {
+  const htmlBody = sections.map(renderSection).filter(Boolean).join('\n')
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="keywords" content="${escapeHtml(meta.keywords.join(', '))}">
+<title>상품 상세페이지</title>
+<style>${SECTION_STYLES}</style>
+</head>
+<body>
+${htmlBody}
+<footer>
+  <strong>AI 생성 콘텐츠 고지</strong><br>
+  이 상세페이지의 일부 콘텐츠는 ProductCraft AI 를 통해 자동 생성·편집되었습니다.<br>
+  생성된 이미지는 Google SynthID 워터마크를 포함하며, AI 생성 콘텐츠임을 식별할 수 있습니다.
+</footer>
+</body>
+</html>`
+}
+
+function renderSection(s: DetailSection): string {
+  switch (s.type) {
+    case 'hero': {
+      const img = s.image
+        ? `<img src="${escapeHtml(s.image)}" alt="${escapeHtml(s.title)}" />`
+        : ''
+      return `<section class="hero">${img}<h1>${escapeHtml(s.title)}</h1><p>${escapeHtml(s.tagline)}</p></section>`
+    }
+    case 'features': {
+      const items = s.items.slice(0, 12)
+        .map((f, i) => `<div class="feature-item"><div class="feature-num">${String(i + 1).padStart(2, '0')}</div><p class="feature-text">${escapeHtml(f)}</p></div>`)
+        .join('')
+      return `<section><div class="section-label">Key Features</div><h2 class="section-title">${escapeHtml(s.heading)}</h2><div class="features-grid">${items}</div></section>`
+    }
+    case 'description':
+      return `<section style="background:#f5f5f5"><div class="section-label">Product Story</div><h2 class="section-title">상품 소개</h2><p class="desc-text">${escapeHtml(s.content)}</p></section>`
+    case 'keywords': {
+      const tags = s.items.map((k) => `<span class="keyword-tag">${escapeHtml(k)}</span>`).join('')
+      return `<section><div class="section-label">Search Keywords</div><div class="keywords-wrap">${tags}</div></section>`
+    }
+    case 'reviews':
+      return `<section><div class="section-label">Customer Reviews</div><h2 class="section-title">고객 리뷰</h2><div class="review-placeholder"><p>${escapeHtml(s.placeholder)}</p></div></section>`
+    case 'cta': {
+      const href = s.url ? escapeHtml(s.url) : '#'
+      return `<section style="text-align:center"><a href="${href}" class="cta-btn">${escapeHtml(s.label)} →</a></section>`
+    }
+    case 'text': {
+      const heading = s.heading ? `<h2>${escapeHtml(s.heading)}</h2>` : ''
+      return `<section class="text-block">${heading}<p>${escapeHtml(s.content)}</p></section>`
+    }
+    case 'image': {
+      const cap = s.caption ? `<figcaption>${escapeHtml(s.caption)}</figcaption>` : ''
+      return `<section class="image-block"><img src="${escapeHtml(s.url)}" alt="${escapeHtml(s.caption ?? '')}" />${cap}</section>`
+    }
+  }
 }

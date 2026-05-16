@@ -38,8 +38,14 @@ const ThumbnailSchema = z.object({
   aspectRatios: z
     .array(z.enum(['1:1', '4:5', '5:4', '3:4', '4:3', '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1']))
     .default(['1:1', '4:5', '9:16', '16:9']),
+  /** v1.1 Phase 2 — 핀 처리된 비율 (재생성에서 제외) */
+  pinnedAspectRatios: z
+    .array(z.enum(['1:1', '4:5', '5:4', '3:4', '4:3', '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1']))
+    .default([]),
   count: z.number().min(1).max(4).default(1),
   resolution: z.enum(['1K', '2K', '4K']).default('2K'),
+  /** v1.1 Phase 2 — 핀 외 재생성 시 사용자 보정 지시 */
+  refinement: z.string().max(200).optional(),
   /** 한글 배지 텍스트 (예: '신상', '20% 할인') */
   overlayText: z.string().max(20).optional(),
   /** 한글 배지 스타일 옵션 (위치·색·모양) */
@@ -72,7 +78,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { projectId, imageUrl, imageBase64, analysis, aspectRatios, count, resolution, overlayText, overlayBadge } = parsed.data
+    const {
+      projectId, imageUrl, imageBase64, analysis,
+      aspectRatios, pinnedAspectRatios, count, resolution,
+      overlayText, overlayBadge, refinement,
+    } = parsed.data
+
+    // v1.1 Phase 2 — 핀된 비율 제외 (남은 비율이 없으면 모든 비율 진행 — 안전 fallback)
+    const targetRatios = aspectRatios.filter((r) => !pinnedAspectRatios.includes(r))
+    const finalRatios = targetRatios.length > 0 ? targetRatios : aspectRatios
 
     // ─── 크레딧 가드 ──────────────────────────────────────────────────────
     const guard = await checkCreditGuard({
@@ -105,11 +119,15 @@ export async function POST(request: NextRequest) {
       mood: analysis.mood,
       keyFeatures: analysis.keyFeatures,
       keywords: analysis.keywords,
-      aspectRatio: aspectRatios[0] as AspectRatio,
+      aspectRatio: finalRatios[0] as AspectRatio,
       overlayText,
       overlayBadge,
     })
-    const prompt = buildImagePrompt(layers)
+    let prompt = buildImagePrompt(layers)
+    // v1.1 Phase 2 — refinement 가 있으면 프롬프트 끝에 보정 지시 추가
+    if (refinement && refinement.trim()) {
+      prompt = `${prompt}\n\nAdditional user refinement: ${refinement.trim()}`
+    }
 
     // ─── 참조 이미지 준비 ─────────────────────────────────────────────────
     const referenceImages: string[] = []
@@ -124,7 +142,7 @@ export async function POST(request: NextRequest) {
     const genResult = await provider.generate({
       referenceImages,
       prompt,
-      aspectRatios: aspectRatios as AspectRatio[],
+      aspectRatios: finalRatios as AspectRatio[],
       count,
       resolution: resolution as Resolution,
     })
