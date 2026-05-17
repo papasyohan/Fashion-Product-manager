@@ -1,7 +1,12 @@
 /**
  * 트렌드 키워드 래퍼 (T-07)
- * 현재: 카테고리별 정적 트렌드 + 캐시
- * Sprint 2+: 네이버 DataLab API 연동 예정
+ *
+ * 흐름:
+ *   1. 인메모리 캐시 1시간
+ *   2. 네이버 DataLab API (NAVER_DATALAB_CLIENT_ID/SECRET 설정 시)
+ *   3. 정적 카테고리별 fallback
+ *
+ * Phase 3 (v1.1) — 네이버 실연동 추가. 키 미설정 시 정적 fallback.
  */
 
 export interface TrendResult {
@@ -9,11 +14,13 @@ export interface TrendResult {
   fetchedAt: string
   fromCache: boolean
   fromFallback: boolean
+  /** 'naver-datalab' | 'static' — 디버깅용 */
+  source?: 'naver-datalab' | 'static'
 }
 
 // 인메모리 캐시 (TTL: 1시간)
 const cache = new Map<string, { result: TrendResult; expiresAt: number }>()
-const CACHE_TTL_MS = 60 * 60 * 1000 // 1시간
+const CACHE_TTL_MS = 60 * 60 * 1000
 
 // 카테고리별 기본 트렌드 키워드 (fallback)
 const TREND_DATA: Record<string, string[]> = {
@@ -28,57 +35,10 @@ const TREND_DATA: Record<string, string[]> = {
   기타: ['데일리템', '추천템', '신상품', '가성비', '인스타감성'],
 }
 
-export async function fetchTrendKeywords(params: {
-  category: string
-  _forceError?: boolean
-}): Promise<TrendResult> {
-  const { category, _forceError } = params
-
-  // 테스트용 강제 에러 플래그
-  if (_forceError) {
-    return {
-      keywords: getFallbackKeywords(category),
-      fetchedAt: new Date().toISOString(),
-      fromCache: false,
-      fromFallback: true,
-    }
-  }
-
-  // 캐시 확인
-  const cached = cache.get(category)
-  if (cached && cached.expiresAt > Date.now()) {
-    return { ...cached.result, fromCache: true }
-  }
-
-  try {
-    // TODO: Sprint 2 — 네이버 DataLab API 연동
-    // 현재는 정적 데이터 반환
-    const keywords = getTrendKeywords(category)
-    const result: TrendResult = {
-      keywords,
-      fetchedAt: new Date().toISOString(),
-      fromCache: false,
-      fromFallback: false,
-    }
-
-    cache.set(category, {
-      result,
-      expiresAt: Date.now() + CACHE_TTL_MS,
-    })
-
-    return result
-  } catch {
-    return {
-      keywords: getFallbackKeywords(category),
-      fetchedAt: new Date().toISOString(),
-      fromCache: false,
-      fromFallback: true,
-    }
-  }
-}
-
-function getTrendKeywords(category: string): string[] {
-  // 카테고리 정규화 (부분 일치)
+/**
+ * 카테고리 부분 일치로 정적 트렌드 조회
+ */
+function getStaticKeywords(category: string): string[] {
   for (const [key, keywords] of Object.entries(TREND_DATA)) {
     if (category.includes(key) || key.includes(category)) {
       return keywords
@@ -87,6 +47,120 @@ function getTrendKeywords(category: string): string[] {
   return TREND_DATA['기타']!
 }
 
-function getFallbackKeywords(category: string): string[] {
-  return getTrendKeywords(category)
+/**
+ * 네이버 DataLab 검색 트렌드 호출
+ * https://developers.naver.com/docs/serviceapi/datalab/search/search.md
+ *
+ * 카테고리 키워드를 seed 로 사용해 상승률 높은 관련 키워드를 가져온다.
+ * 응답에서 ratio 가 높은 순으로 정렬해 keyword 명을 추출.
+ *
+ * Edge Runtime 호환 (fetch 만 사용).
+ */
+async function fetchFromNaverDataLab(category: string): Promise<string[] | null> {
+  const clientId = process.env.NAVER_DATALAB_CLIENT_ID
+  const clientSecret = process.env.NAVER_DATALAB_CLIENT_SECRET
+  if (!clientId || !clientSecret) return null // 키 미설정 → fallback
+
+  // seed 키워드 = 정적 fallback (네이버 API 는 keywordGroups 필수)
+  const seedKeywords = getStaticKeywords(category).slice(0, 5)
+
+  const today = new Date()
+  const ninetyDaysAgo = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000)
+  const fmt = (d: Date) => d.toISOString().slice(0, 10)
+
+  try {
+    const res = await fetch('https://openapi.naver.com/v1/datalab/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Naver-Client-Id': clientId,
+        'X-Naver-Client-Secret': clientSecret,
+      },
+      body: JSON.stringify({
+        startDate: fmt(ninetyDaysAgo),
+        endDate: fmt(today),
+        timeUnit: 'week',
+        keywordGroups: seedKeywords.map((kw) => ({
+          groupName: kw,
+          keywords: [kw],
+        })),
+      }),
+    })
+
+    if (!res.ok) {
+      console.warn('[trend-fetcher] naver datalab failed:', res.status)
+      return null
+    }
+
+    const data = await res.json() as {
+      results?: Array<{
+        title: string
+        data: Array<{ period: string; ratio: number }>
+      }>
+    }
+
+    if (!data.results || data.results.length === 0) return null
+
+    // 평균 ratio 가 높은 순으로 정렬 (관심도 ↑)
+    const ranked = data.results
+      .map((r) => ({
+        title: r.title,
+        avgRatio: r.data.reduce((sum, d) => sum + d.ratio, 0) / Math.max(r.data.length, 1),
+      }))
+      .sort((a, b) => b.avgRatio - a.avgRatio)
+      .map((r) => r.title)
+
+    return ranked
+  } catch (err) {
+    console.warn('[trend-fetcher] naver datalab error:', err)
+    return null
+  }
+}
+
+export async function fetchTrendKeywords(params: {
+  category: string
+  _forceError?: boolean
+}): Promise<TrendResult> {
+  const { category, _forceError } = params
+
+  if (_forceError) {
+    return {
+      keywords: getStaticKeywords(category),
+      fetchedAt: new Date().toISOString(),
+      fromCache: false,
+      fromFallback: true,
+      source: 'static',
+    }
+  }
+
+  // 캐시 hit
+  const cached = cache.get(category)
+  if (cached && cached.expiresAt > Date.now()) {
+    return { ...cached.result, fromCache: true }
+  }
+
+  // Phase 3.3 — 네이버 DataLab 실연동 시도
+  const liveKeywords = await fetchFromNaverDataLab(category).catch(() => null)
+
+  let result: TrendResult
+  if (liveKeywords && liveKeywords.length > 0) {
+    result = {
+      keywords: liveKeywords,
+      fetchedAt: new Date().toISOString(),
+      fromCache: false,
+      fromFallback: false,
+      source: 'naver-datalab',
+    }
+  } else {
+    result = {
+      keywords: getStaticKeywords(category),
+      fetchedAt: new Date().toISOString(),
+      fromCache: false,
+      fromFallback: true,
+      source: 'static',
+    }
+  }
+
+  cache.set(category, { result, expiresAt: Date.now() + CACHE_TTL_MS })
+  return result
 }

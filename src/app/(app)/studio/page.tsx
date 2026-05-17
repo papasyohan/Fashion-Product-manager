@@ -10,6 +10,7 @@ import { ModeSelector } from '@/components/mode-selector'
 import { CreditGuardModal } from '@/components/credit-guard-modal'
 import { IntentForm } from '@/components/intent-form'
 import { AnalysisReviewCard } from '@/components/analysis-review-card'
+import { RefineBar } from '@/components/refine-bar'
 import { createClient } from '@/lib/supabase/client'
 import {
   useStudioStore,
@@ -401,6 +402,18 @@ function StudioPageInner() {
     await Promise.all(tasks)
   }, [store.locks, handleRegenerateNaming, handleRegenerateTagline, handleRegenerateDescription])
 
+  // Phase 3 — 자연어 Refine Bar: 여러 섹션 동시 재생성 (같은 refinement)
+  const handleGlobalRefine = useCallback(async (
+    refinement: string,
+    targets: Array<'naming' | 'tagline' | 'description'>
+  ) => {
+    const tasks: Promise<unknown>[] = []
+    if (targets.includes('naming'))      tasks.push(handleRegenerateNaming(refinement))
+    if (targets.includes('tagline'))     tasks.push(handleRegenerateTagline(refinement))
+    if (targets.includes('description')) tasks.push(handleRegenerateDescription(refinement))
+    await Promise.all(tasks)
+  }, [handleRegenerateNaming, handleRegenerateTagline, handleRegenerateDescription])
+
   // Phase 2 — 썸네일 핀 재롤
   const handleRerollThumbnails = useCallback(async (refinement: string) => {
     if (!store.projectId || !store.uploadedImageBase64 || !store.result) return
@@ -468,7 +481,7 @@ function StudioPageInner() {
 
   if (store.status === 'done' && store.result && store.mode) {
     return (
-      <div>
+      <div className="pb-48"> {/* RefineBar sticky 공간 확보 */}
         <div className="bg-white sticky top-0 z-10" style={{ borderBottom: '1px solid #e5e5e5' }}>
           <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
             <button
@@ -534,6 +547,12 @@ function StudioPageInner() {
             onUpdate={store.updateAnalysis}
           />
         </div>
+
+        {/* Phase 3 — 자연어 Refine Bar (결과 화면 하단 sticky) */}
+        <RefineBar
+          locks={store.locks}
+          onSubmit={handleGlobalRefine}
+        />
 
         {/* 크레딧 업그레이드 모달 */}
         {guardModal.open && guardModal.result && (

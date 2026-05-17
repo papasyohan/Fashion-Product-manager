@@ -74,6 +74,29 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // v1.1 Admin — /admin/* 경로는 role='admin' 유저만 접근 가능
+  if (user && pathname.startsWith('/admin')) {
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role, banned_at')
+        .eq('id', user.id)
+        .single()
+
+      const isAdmin = profile?.role === 'admin' && !profile?.banned_at
+      if (!isAdmin) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/studio'
+        return NextResponse.redirect(url)
+      }
+    } catch (err) {
+      console.error('[proxy] admin check failed:', err)
+      const url = request.nextUrl.clone()
+      url.pathname = '/studio'
+      return NextResponse.redirect(url)
+    }
+  }
+
   return supabaseResponse
 }
 

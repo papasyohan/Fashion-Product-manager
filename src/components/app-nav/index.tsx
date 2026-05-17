@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { LogOut, ChevronDown, Zap, History, CreditCard } from 'lucide-react'
+import { LogOut, ChevronDown, Zap, History, CreditCard, Shield } from 'lucide-react'
 
 export function AppNav() {
   const pathname = usePathname()
   const router = useRouter()
   const [credits, setCredits] = useState<number | null>(null)
   const [plan, setPlan] = useState<string>('free')
+  const [isAdmin, setIsAdmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
 
@@ -22,12 +23,13 @@ export function AppNav() {
       setUserEmail(user.email ?? null)
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('credits_left, plan')
+        .select('credits_left, plan, role')
         .eq('id', user.id)
         .single()
       if (profile) {
         setCredits(profile.credits_left)
         setPlan(profile.plan)
+        setIsAdmin(profile.role === 'admin')
       }
     }
     fetchProfile()
@@ -44,6 +46,7 @@ export function AppNav() {
     { href: '/studio', label: '스튜디오', icon: Zap },
     { href: '/history', label: '히스토리', icon: History },
     { href: '/billing', label: '플랜·결제', icon: CreditCard },
+    ...(isAdmin ? [{ href: '/admin', label: 'Admin', icon: Shield }] : []),
   ]
 
   const planLabel: Record<string, string> = {

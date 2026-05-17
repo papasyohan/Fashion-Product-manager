@@ -14,7 +14,7 @@
  */
 
 import { useState, useCallback } from 'react'
-import { Plus, GripVertical, MoreHorizontal, Trash2, Download, Save, ExternalLink, X, Loader2 } from 'lucide-react'
+import { Plus, GripVertical, MoreHorizontal, Trash2, Download, Save, ExternalLink, X, Loader2, Sparkles } from 'lucide-react'
 import { EditableText } from '@/components/editable-text'
 import type { DetailSection, DetailSectionType } from '@/store/studio'
 
@@ -88,6 +88,46 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
   const [exporting, setExporting] = useState(false)
   const [previewHtml, setPreviewHtml] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
+
+  // Phase 3.2 — AI 자동 조립
+  const [planning, setPlanning] = useState(false)
+  const [planError, setPlanError] = useState<string | null>(null)
+  const handleAutoCompose = async () => {
+    if (!defaults) {
+      setPlanError('자동 구성을 위한 기본 정보가 없습니다.')
+      return
+    }
+    setPlanning(true)
+    setPlanError(null)
+    try {
+      const res = await fetch('/api/generate/detail-page-sections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productName: defaults.productName,
+          tagline: defaults.tagline,
+          description: defaults.description,
+          category: '상품',
+          keywords: defaults.keywords,
+          features: defaults.features,
+          projectId,
+        }),
+      })
+      if (!res.ok) throw new Error(`AI 자동 구성 실패 (${res.status})`)
+      const { sections: newSections } = await res.json()
+      // hero 섹션에 thumbnail 이미지 자동 주입
+      const enriched = (newSections as DetailSection[]).map((s) =>
+        s.type === 'hero' && defaults.thumbnailUrl
+          ? ({ ...s, image: defaults.thumbnailUrl } as DetailSection)
+          : s
+      )
+      onChange(enriched)
+    } catch (err) {
+      setPlanError(err instanceof Error ? err.message : 'AI 자동 구성 실패')
+    } finally {
+      setPlanning(false)
+    }
+  }
 
   // ── 섹션 변경 헬퍼들 ────────────────────────────────────────────────────
   const updateSection = useCallback(
@@ -227,10 +267,24 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
 
       {/* 액션 바 */}
       <div className="mt-4 flex items-center justify-between flex-wrap gap-2">
-        <div className="text-[12px] text-[#9e9ea0]">
-          {sections.length}개 섹션 · 인라인 편집 · 드래그 정렬
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="text-[12px] text-[#9e9ea0]">
+            {sections.length}개 섹션 · 인라인 편집 · 드래그 정렬
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Phase 3.2 — AI 자동 구성 */}
+          {defaults && (
+            <button
+              onClick={handleAutoCompose}
+              disabled={planning || exporting}
+              title="AI 가 분석 결과 기반으로 상세페이지 구조를 자동 설계"
+              className="inline-flex items-center gap-1.5 px-3 h-9 rounded-full text-[12px] font-bold text-white bg-[#111111] hover:bg-[#333333] transition-colors disabled:opacity-50"
+            >
+              {planning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              AI 로 자동 구성
+            </button>
+          )}
           <button
             onClick={() => handleExport('preview')}
             disabled={exporting}
@@ -253,18 +307,19 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
             <button
               onClick={() => handleExport('save')}
               disabled={exporting}
-              className="inline-flex items-center gap-1.5 px-3 h-9 rounded-full text-[12px] font-semibold text-white bg-[#111111] hover:bg-[#333333] transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 h-9 rounded-full text-[12px] font-semibold text-[#111111] hover:bg-[#f5f5f5] transition-colors disabled:opacity-50"
+              style={{ border: '1px solid #cacacb' }}
             >
               {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              프로젝트와 함께 저장
+              저장
             </button>
           )}
         </div>
       </div>
 
-      {exportError && (
+      {(exportError || planError) && (
         <div className="mt-3 p-3 text-[12px]" style={{ color: '#d30005', border: '1px solid #fecaca', backgroundColor: '#fff5f5' }}>
-          {exportError}
+          {exportError ?? planError}
         </div>
       )}
 

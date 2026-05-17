@@ -400,6 +400,50 @@ Phase 1 에서는 수동 타입 정의로 진행 (`src/types/supabase.ts` 직접
 
 **Phase 2 추가 마이그레이션 필요 없음** — 007 이 이미 parent_id / locked / is_pinned 모두 추가했음.
 
+**Phase 3 추가 마이그레이션 필요 없음** — 새 DB 컬럼 없음. (Admin 은 별도 008 필요)
+
+---
+
+## 14. Phase 3 — Power Features
+
+### 14.1 자연어 Refine Bar (L4-B)
+결과 화면 하단 sticky bar — 항상 노출되는 자연어 보정 진입점.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 이 결과를 어떻게 다듬을까요?                                  │
+│ [textarea —— "더 캐주얼하게 30대 남성 톤으로"]                │
+│ 적용할 항목: ☑ 상품명  ☑ 카피  ☑ 설명     [↻ 다듬기]          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- 여러 섹션에 동시 적용 (체크박스 선택)
+- 잠긴 섹션은 자동 제외
+- 백엔드 변경 없음 — 기존 per-section regenerate 핸들러를 병렬 호출
+
+### 14.2 상세페이지 LLM 자동 조립 (G5 진정 구현)
+현재 노션 에디터는 `buildDefaultSections` 헬퍼로 정적 구성. Phase 3 에서:
+- 신규 라우트 `/api/generate/detail-page-sections` (Edge Runtime)
+- 입력: analysis + 결과 (상품명·카피·설명·키워드)
+- 출력: 셀러 의도에 맞춘 `DetailSection[]` (LLM 이 섹션 종류·순서·텍스트까지 결정)
+- AI SDK Router 의 `detail_page` task 사용
+- 클라이언트: 노션 에디터에 [✨ AI 로 자동 구성] 버튼 → 호출 → setSections
+
+### 14.3 트렌드 키워드 실연동
+현재 `trend-fetcher.ts` 는 정적 fallback. Phase 3:
+- 네이버 DataLab API 실연동 (`NAVER_DATALAB_CLIENT_ID` + `_SECRET`)
+- 키 미설정 시 fallback (현재 동작 유지)
+- Google Trends 는 비공식 API 라 Edge 호환 어려움 → 추후 별도 백엔드 워커
+
+### 14.4 썸네일 영역 마스크 편집 (G4-7)
+**Phase 3 범위**: 사용자가 썸네일 위에 사각형 영역 선택 → 그 영역의 자연어 위치 설명을 추출 → prompt 에 주입.
+
+- `ThumbnailMaskEditor` 컴포넌트 — Canvas 기반 사각형 드래그
+- 선택 영역 좌표 → 9-grid 위치 라벨 ("우상단", "중앙", "하단") 자동 변환
+- `/api/generate/thumbnail` 의 `refinement` 필드에 위치 + 사용자 지시 결합 전달
+
+**향후(Phase 4)**: Nano Banana 2 의 정식 inpainting API 도입 시 mask PNG 직접 전송. 현재 SDK 가 mask 파라미터 미지원이라 prompt 기반 우회.
+
 ---
 
 ## 12. Phase 2 컴포넌트 위치 매핑

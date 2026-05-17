@@ -88,6 +88,30 @@ export const DescriptionSchema = z.object({
 })
 export type DescriptionOutput = z.infer<typeof DescriptionSchema>
 
+// ─── Phase 3.2 — 상세페이지 섹션 LLM 조립 스키마 ────────────────────────────
+
+/**
+ * AI 가 셀러 의도에 맞춰 상세페이지를 자동 구성한다.
+ * 노션 에디터 의 buildDefaultSections (정적) 보다 한 단계 위 — LLM 이 섹션 종류·순서·텍스트까지 결정.
+ *
+ * 출력: DetailSection[] 호환 형태. id 는 클라이언트에서 부여.
+ */
+export const DetailPageSectionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('hero'),        title: z.string(), tagline: z.string() }),
+  z.object({ type: z.literal('features'),    heading: z.string(), items: z.array(z.string()).min(2).max(8) }),
+  z.object({ type: z.literal('description'), content: z.string() }),
+  z.object({ type: z.literal('keywords'),    items: z.array(z.string()).min(3).max(12) }),
+  z.object({ type: z.literal('reviews'),     placeholder: z.string() }),
+  z.object({ type: z.literal('cta'),         label: z.string() }),
+  z.object({ type: z.literal('text'),        heading: z.string().optional(), content: z.string() }),
+])
+
+export const DetailPagePlanSchema = z.object({
+  sections: z.array(DetailPageSectionSchema).min(3).max(10)
+    .describe('상품 상세페이지를 구성하는 섹션 배열. hero 가 반드시 첫 번째.'),
+})
+export type DetailPagePlan = z.infer<typeof DetailPagePlanSchema>
+
 // ─── 파이프라인 SSE 이벤트 ──────────────────────────────────────────────────
 
 export type PipelineEvent =

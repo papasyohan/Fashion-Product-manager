@@ -20,18 +20,45 @@ export interface Database {
           id: string
           plan: 'free' | 'starter' | 'pro' | 'business'
           credits_left: number
+          /** v1.1 Admin — 'user' (기본) | 'admin' */
+          role: 'user' | 'admin'
+          /** v1.1 Admin — null = active, timestamp = banned */
+          banned_at: string | null
           created_at: string
         }
         Insert: {
           id: string
           plan?: 'free' | 'starter' | 'pro' | 'business'
           credits_left?: number
+          role?: 'user' | 'admin'
+          banned_at?: string | null
           created_at?: string
         }
         Update: {
           plan?: 'free' | 'starter' | 'pro' | 'business'
           credits_left?: number
+          role?: 'user' | 'admin'
+          banned_at?: string | null
         }
+      }
+      audit_log: {
+        Row: {
+          id: string
+          actor_id: string
+          action: string
+          target_id: string | null
+          payload: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          actor_id: string
+          action: string
+          target_id?: string | null
+          payload?: Json
+          created_at?: string
+        }
+        Update: never
       }
       projects: {
         Row: {

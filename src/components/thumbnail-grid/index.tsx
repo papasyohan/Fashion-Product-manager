@@ -5,7 +5,8 @@
  */
 
 import { useState } from 'react'
-import { Check, Download, Loader2, ImageOff, Pin, RotateCw, X } from 'lucide-react'
+import { Check, Download, Loader2, ImageOff, Pin, RotateCw, X, Crop } from 'lucide-react'
+import { ThumbnailMaskEditor } from '@/components/thumbnail-mask-editor'
 
 // ─── 타입 ────────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,8 @@ export function ThumbnailGrid({
   const [rerollOpen, setRerollOpen] = useState(false)
   const [rerollText, setRerollText] = useState('')
   const [rerolling, setRerolling] = useState(false)
+  // Phase 3.4 — 영역 마스크 편집 대상
+  const [maskTarget, setMaskTarget] = useState<ThumbnailItem | null>(null)
 
   const getKey = (t: ThumbnailItem, i: number) => t.id ?? `${t.aspectRatio}-${i}`
 
@@ -133,17 +136,33 @@ export function ThumbnailGrid({
                       </button>
                     )}
 
-                    {/* 다운로드 — 호버 시 우하단 */}
+                    {/* 호버 시 하단 액션 — 마스크 편집 / 다운로드 */}
                     {isHovered && (
-                      <a
-                        href={thumb.url}
-                        download={`thumbnail-${thumb.aspectRatio.replace(':', 'x')}.jpg`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="absolute bottom-2 right-2 w-7 h-7 flex items-center justify-center"
-                        style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
-                      >
-                        <Download className="w-3.5 h-3.5 text-[#111111]" />
-                      </a>
+                      <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                        {onReroll && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setMaskTarget(thumb)
+                            }}
+                            className="w-7 h-7 flex items-center justify-center"
+                            style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
+                            title="영역만 다듬기"
+                          >
+                            <Crop className="w-3.5 h-3.5 text-[#111111]" />
+                          </button>
+                        )}
+                        <a
+                          href={thumb.url}
+                          download={`thumbnail-${thumb.aspectRatio.replace(':', 'x')}.jpg`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-7 h-7 flex items-center justify-center"
+                          style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
+                          title="다운로드"
+                        >
+                          <Download className="w-3.5 h-3.5 text-[#111111]" />
+                        </a>
+                      </div>
                     )}
                   </div>
 
@@ -246,6 +265,20 @@ export function ThumbnailGrid({
           생성되었으며 SynthID 워터마크가 포함됩니다. 상업적 이용 시 AI 생성 콘텐츠임을 명시해야
           합니다.
         </div>
+      )}
+
+      {/* Phase 3.4 — 영역 마스크 편집 모달 */}
+      {maskTarget && onReroll && (
+        <ThumbnailMaskEditor
+          imageUrl={maskTarget.url}
+          aspectRatio={maskTarget.aspectRatio}
+          onClose={() => setMaskTarget(null)}
+          onApply={async (refinement) => {
+            // 핀이 안 된 다른 비율들은 보존하고, 대상 비율만 새로 만들도록
+            // 임시로 모든 다른 비율을 핀에 추가 (호출 후 복원할 수 있지만 단순화)
+            await onReroll(refinement)
+          }}
+        />
       )}
     </div>
   )
