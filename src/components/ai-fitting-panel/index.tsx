@@ -1,0 +1,334 @@
+'use client'
+
+/**
+ * AIFittingPanel — Phase 4 (D-4 A안: 새 04 섹션)
+ *
+ * 3-패널 레이아웃:
+ *  좌: 원본 제품 사진 (읽기전용)
+ *  중: 모델 업로드 + "AI Fitting" 버튼 + 같은 모델 재사용 토글
+ *  우: 생성된 fitting 결과 (가장 첫 번째) + 비율 chip + 다운로드 버튼
+ *
+ * D-5: 모델 사진은 영구 보관, 사용자가 "다른 모델 사용" 토글 시 재업로드 dropzone 노출
+ * D-2: 1:1 + 4:5 + 9:16 3장 동시 생성
+ * D-3: Pro 이상만 — 비-Pro 클릭 시 CreditGuardModal 트리거 (부모에서 처리)
+ */
+
+import { useState, useRef, useCallback } from 'react'
+import {
+  Loader2, Upload, Sparkles, Download, X, RefreshCw,
+  Image as ImageIcon, AlertCircle,
+} from 'lucide-react'
+
+interface FittingResult {
+  url: string
+  aspectRatio: string
+  width: number
+  height: number
+  modelImageUrl?: string | null
+}
+
+interface AIFittingPanelProps {
+  /** 원본 제품 이미지 (URL 또는 base64) */
+  productImageUrl: string | null
+  /** 직전에 업로드한 모델 (재사용 옵션 표시용) */
+  lastModelImageUrl: string | null
+  /** 현재 사용 중인 모델 (base64 or URL) — 새로 올렸을 때 즉시 미리보기 */
+  currentModelBase64: string | null
+  currentModelUrl: string | null
+  /** 같은 모델 재사용 여부 */
+  reuseLastModel: boolean
+  onToggleReuseModel: () => void
+  /** 모델 업로드 콜백 */
+  onModelUpload: (base64: string) => void
+  onModelClear: () => void
+  /** AI Fitting 생성 콜백 */
+  onGenerate: () => Promise<void>
+  /** 생성 결과 */
+  fittings: FittingResult[]
+  /** 결과 hero 선택 */
+  selectedFittingUrl: string | null
+  onSelectHero: (url: string) => void
+}
+
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const MAX_SIZE_MB = 10
+
+export function AIFittingPanel(p: AIFittingPanelProps) {
+  const [generating, setGenerating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // 현재 표시할 모델 이미지 결정
+  // - reuseLastModel = true + lastModelImageUrl 있으면 → 재사용
+  // - 새로 업로드한 base64 가 있으면 → 그것 우선
+  const effectiveModel = p.currentModelBase64
+    ?? p.currentModelUrl
+    ?? (p.reuseLastModel ? p.lastModelImageUrl : null)
+
+  const hasModel = !!effectiveModel
+  const hasFittings = p.fittings.length > 0
+
+  // ─── 파일 업로드 핸들러 ────────────────────────────────────────────────
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      setError('JPG, PNG, WebP 형식만 지원합니다.')
+      return
+    }
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      setError(`파일 크기는 ${MAX_SIZE_MB}MB 이하여야 합니다.`)
+      return
+    }
+
+    setError(null)
+    const reader = new FileReader()
+    reader.onload = () => {
+      const base64 = reader.result as string
+      p.onModelUpload(base64)
+    }
+    reader.onerror = () => setError('파일 읽기 실패')
+    reader.readAsDataURL(file)
+  }, [p])
+
+  const triggerFileSelect = () => fileInputRef.current?.click()
+
+  // ─── 생성 핸들러 ────────────────────────────────────────────────────────
+  const handleGenerate = async () => {
+    setError(null)
+    setGenerating(true)
+    try {
+      await p.onGenerate()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'AI Fitting 실패')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  // 표시용 결과 (selectedFittingUrl 우선)
+  const heroFitting = p.fittings.find((f) => f.url === p.selectedFittingUrl) ?? p.fittings[0]
+
+  return (
+    <div className="space-y-3">
+      {/* 안내 박스 */}
+      <div
+        className="p-3 text-[12px] text-[#707072] leading-relaxed"
+        style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }}
+      >
+        <strong className="text-[#111111]">✨ AI Fitting</strong> · 모델 사진을 업로드하시면
+        AI 가 원본 제품을 그 모델에 자연스럽게 입혀준 합성 이미지 3장 (1:1·4:5·9:16) 을 생성합니다.
+        <br />
+        <span className="text-[10px]">⚠️ 본인 또는 동의를 받은 인물의 사진만 업로드해주세요. SynthID 워터마크가 자동 삽입됩니다. (5크레딧 · Pro 이상)</span>
+      </div>
+
+      {/* 3-패널 그리드 */}
+      <div
+        className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-stretch"
+        style={{ border: '1px solid #e5e5e5', backgroundColor: '#ffffff' }}
+      >
+        {/* 좌: 원본 제품 */}
+        <div className="p-4 flex flex-col" style={{ borderRight: '1px solid #e5e5e5' }}>
+          <div className="text-[10px] font-black uppercase tracking-widest text-[#9e9ea0] mb-2">
+            원본 제품
+          </div>
+          <div
+            className="flex-1 aspect-square overflow-hidden flex items-center justify-center"
+            style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5', minHeight: 240 }}
+          >
+            {p.productImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.productImageUrl} alt="원본 제품" className="w-full h-full object-cover" />
+            ) : (
+              <ImageIcon className="w-10 h-10 text-[#9e9ea0]" />
+            )}
+          </div>
+        </div>
+
+        {/* 중: 모델 업로드 + 액션 */}
+        <div className="p-4 flex flex-col items-stretch justify-center md:w-[200px]">
+          {/* 모델 이미지 미리보기 또는 업로드 영역 */}
+          {hasModel ? (
+            <div className="space-y-2">
+              <div className="text-[10px] font-black uppercase tracking-widest text-[#9e9ea0] text-center">
+                모델
+              </div>
+              <div
+                className="aspect-square overflow-hidden relative"
+                style={{ border: '1px solid #e5e5e5', backgroundColor: '#f5f5f5' }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={effectiveModel!} alt="모델" className="w-full h-full object-cover" />
+                <button
+                  onClick={() => {
+                    p.onModelClear()
+                    if (fileInputRef.current) fileInputRef.current.value = ''
+                  }}
+                  className="absolute top-1 right-1 w-6 h-6 flex items-center justify-center"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+                  title="모델 사진 제거"
+                >
+                  <X className="w-3 h-3 text-white" />
+                </button>
+              </div>
+
+              {/* "같은 모델 재사용 / 다른 모델 사용" 토글 — 직전 모델 있을 때만 */}
+              {p.lastModelImageUrl && !p.currentModelBase64 && !p.currentModelUrl && (
+                <button
+                  onClick={p.onToggleReuseModel}
+                  className="w-full px-2 py-1 rounded-full text-[10px] font-semibold text-[#707072] hover:text-[#111111] transition-colors"
+                  style={{ border: '1px solid #cacacb' }}
+                >
+                  {p.reuseLastModel ? '같은 모델 ✓' : '다른 모델 사용'}
+                </button>
+              )}
+
+              <button
+                onClick={triggerFileSelect}
+                disabled={generating}
+                className="w-full px-2 py-1 rounded-full text-[10px] font-semibold text-[#707072] hover:text-[#111111] transition-colors disabled:opacity-50"
+                style={{ border: '1px solid #cacacb' }}
+              >
+                <RefreshCw className="w-2.5 h-2.5 inline mr-1" />
+                다시 업로드
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={triggerFileSelect}
+              disabled={generating}
+              className="aspect-square flex flex-col items-center justify-center gap-2 transition-colors disabled:opacity-50 hover:bg-[#f5f5f5]"
+              style={{ border: '2px dashed #cacacb', backgroundColor: '#ffffff' }}
+            >
+              <div
+                className="w-10 h-10 flex items-center justify-center"
+                style={{ backgroundColor: '#111111' }}
+              >
+                <Upload className="w-5 h-5 text-white" strokeWidth={2} />
+              </div>
+              <span className="text-[12px] font-bold text-[#111111]">모델 업로드</span>
+              <span className="text-[10px] text-[#9e9ea0]">JPG·PNG·WebP</span>
+            </button>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_TYPES.join(',')}
+            className="hidden"
+            onChange={handleFileChange}
+          />
+
+          {/* AI Fitting 실행 버튼 */}
+          <button
+            onClick={handleGenerate}
+            disabled={!hasModel || generating}
+            className="mt-3 inline-flex items-center justify-center gap-1.5 px-3 h-10 rounded-full text-[12px] font-bold text-white bg-[#111111] hover:bg-[#333333] transition-colors disabled:opacity-40"
+          >
+            {generating ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                생성 중...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5" />
+                AI Fitting
+              </>
+            )}
+          </button>
+
+          {error && (
+            <div className="mt-2 flex items-start gap-1.5 text-[10px]" style={{ color: '#d30005' }}>
+              <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+
+        {/* 우: Fitting 결과 */}
+        <div className="p-4 flex flex-col" style={{ borderLeft: '1px solid #e5e5e5' }}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] font-black uppercase tracking-widest text-[#9e9ea0]">
+              Fitting 결과
+            </div>
+            {hasFittings && (
+              <div className="flex items-center gap-1">
+                {p.fittings.map((f) => (
+                  <button
+                    key={f.url}
+                    onClick={() => p.onSelectHero(f.url)}
+                    className="px-2 py-0.5 rounded-full text-[9px] font-bold transition-colors"
+                    style={{
+                      backgroundColor: f.url === (heroFitting?.url ?? '') ? '#111111' : '#ffffff',
+                      color: f.url === (heroFitting?.url ?? '') ? '#ffffff' : '#111111',
+                      border: '1px solid #cacacb',
+                    }}
+                    title={`${f.aspectRatio} hero 로 선택`}
+                  >
+                    {f.aspectRatio}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {hasFittings && heroFitting ? (
+            <div className="flex-1 flex flex-col gap-2">
+              <div
+                className="overflow-hidden flex-1 flex items-center justify-center"
+                style={{
+                  aspectRatio: heroFitting.aspectRatio.replace(':', '/'),
+                  border: '1px solid #e5e5e5',
+                  backgroundColor: '#f5f5f5',
+                  maxHeight: 360,
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={heroFitting.url}
+                  alt="AI Fitting 결과"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              <a
+                href={heroFitting.url}
+                download={`ai-fitting-${heroFitting.aspectRatio.replace(':', 'x')}.png`}
+                className="inline-flex items-center justify-center gap-1.5 px-3 h-9 rounded-full text-[12px] font-bold text-white transition-colors"
+                style={{ backgroundColor: '#ec4899' }}
+              >
+                <Download className="w-3.5 h-3.5" />
+                다운로드
+              </a>
+              <p className="text-[10px] text-[#9e9ea0] text-center">
+                선택한 비율이 상세페이지 hero 아래 자동 삽입됩니다
+              </p>
+            </div>
+          ) : generating ? (
+            <div
+              className="flex-1 flex flex-col items-center justify-center gap-2"
+              style={{ minHeight: 240, backgroundColor: '#f5f5f5', border: '1px dashed #cacacb' }}
+            >
+              <Loader2 className="w-8 h-8 text-[#111111] animate-spin" />
+              <p className="text-[12px] font-semibold text-[#111111]">AI Fitting 진행 중</p>
+              <p className="text-[10px] text-[#707072]">약 30초 ~ 1분 소요</p>
+            </div>
+          ) : (
+            <div
+              className="flex-1 flex flex-col items-center justify-center gap-2"
+              style={{ minHeight: 240, backgroundColor: '#fafafa', border: '2px dashed #e5e5e5' }}
+            >
+              <ImageIcon className="w-10 h-10 text-[#9e9ea0]" />
+              <p className="text-[12px] text-[#9e9ea0] text-center px-4">
+                모델 사진을 업로드하고
+                <br />
+                AI Fitting 버튼을 눌러주세요
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

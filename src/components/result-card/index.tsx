@@ -9,6 +9,7 @@ import { EditableText } from '@/components/editable-text'
 import { RegenerateMenu } from '@/components/regenerate-menu'
 import { VariantsTray } from '@/components/variants-tray'
 import { DetailPageEditor, buildDefaultSections } from '@/components/detail-page-editor'
+import { AIFittingPanel } from '@/components/ai-fitting-panel'
 import type { GenerationResult, DetailSection, SectionKind } from '@/store/studio'
 
 interface ResultCardProps {
@@ -48,6 +49,20 @@ interface ResultCardProps {
   // 상세페이지 노션 에디터 (L8)
   detailPageSections?: DetailSection[] | null
   onChangeDetailSections?: (sections: DetailSection[]) => void
+
+  // Phase 4 — AI Fitting (Studio 모드 한정)
+  productImageUrl?: string | null
+  lastModelImageUrl?: string | null
+  currentModelBase64?: string | null
+  currentModelUrl?: string | null
+  reuseLastModel?: boolean
+  onToggleReuseModel?: () => void
+  onModelUpload?: (base64: string) => void
+  onModelClear?: () => void
+  onGenerateAIFitting?: () => Promise<void>
+  aiFittings?: Array<{ url: string; aspectRatio: string; width: number; height: number; modelImageUrl?: string | null }>
+  selectedFittingUrl?: string | null
+  onSelectFittingHero?: (url: string) => void
 }
 
 export function ResultCard({
@@ -75,6 +90,18 @@ export function ResultCard({
   onRerollThumbnails,
   detailPageSections,
   onChangeDetailSections,
+  productImageUrl,
+  lastModelImageUrl,
+  currentModelBase64,
+  currentModelUrl,
+  reuseLastModel,
+  onToggleReuseModel,
+  onModelUpload,
+  onModelClear,
+  onGenerateAIFitting,
+  aiFittings,
+  selectedFittingUrl,
+  onSelectFittingHero,
 }: ResultCardProps) {
   const [regenAllLoading, setRegenAllLoading] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
@@ -387,10 +414,31 @@ export function ResultCard({
         </div>
       </section>
 
-      {/* 스튜디오 모드 전용: 썸네일 */}
+      {/* 스튜디오 모드 전용: 04 AI Fitting (Phase 4) */}
+      {mode === 'studio' && onGenerateAIFitting && onModelUpload && onModelClear && onToggleReuseModel && onSelectFittingHero && (
+        <section className="mb-8">
+          <SectionHeader number="04" title="AI Fitting" subtitle="모델에게 입혀보기 · Pro 이상" />
+          <AIFittingPanel
+            productImageUrl={productImageUrl ?? null}
+            lastModelImageUrl={lastModelImageUrl ?? null}
+            currentModelBase64={currentModelBase64 ?? null}
+            currentModelUrl={currentModelUrl ?? null}
+            reuseLastModel={reuseLastModel ?? true}
+            onToggleReuseModel={onToggleReuseModel}
+            onModelUpload={onModelUpload}
+            onModelClear={onModelClear}
+            onGenerate={onGenerateAIFitting}
+            fittings={aiFittings ?? []}
+            selectedFittingUrl={selectedFittingUrl ?? null}
+            onSelectHero={onSelectFittingHero}
+          />
+        </section>
+      )}
+
+      {/* 스튜디오 모드 전용: 05 썸네일 (이전 04) */}
       {mode === 'studio' && result.thumbnails && result.thumbnails.length > 0 && (
         <section className="mb-8">
-          <SectionHeader number="04" title="썸네일" subtitle="Nano Banana 2 · Pin & Re-roll" />
+          <SectionHeader number="05" title="썸네일" subtitle="Nano Banana 2 · Pin & Re-roll" />
           <ThumbnailGrid
             thumbnails={result.thumbnails
               .filter((t): t is typeof t & { url: string } => !!t.url)
@@ -410,31 +458,32 @@ export function ResultCard({
         </section>
       )}
 
-      {/* 스튜디오 모드 전용: 상세페이지 노션 스타일 에디터 (L8) */}
+      {/* 스튜디오 모드 전용: 06 상세페이지 노션 에디터 (L8, 이전 05) */}
       {mode === 'studio' && (
         <section className="mb-8">
-          <SectionHeader number="05" title="상세페이지" subtitle="섹션 에디터 · 드래그·편집·내보내기" />
+          <SectionHeader number="06" title="상세페이지" subtitle="섹션 에디터 · 드래그·편집·내보내기" />
           {onChangeDetailSections ? (
-            <DetailPageEditor
-              sections={detailPageSections ?? buildDefaultSections({
+            (() => {
+              // D-4 보강: selectedFittingUrl 이 있으면 그것을 hero 이미지로 우선 사용
+              // (AI Fitting 으로 모델이 입은 모습 > 원본 썸네일)
+              const heroImage = selectedFittingUrl ?? result.primaryThumbnailUrl
+              const defaultsCommon = {
                 productName: selectedName || (result.names[0]?.name ?? '상품'),
                 tagline: result.tagline,
                 description: result.description,
                 keywords: result.keywords ?? [],
                 features: result.features ?? [],
-                thumbnailUrl: result.primaryThumbnailUrl,
-              })}
-              onChange={onChangeDetailSections}
-              projectId={projectId}
-              defaults={{
-                productName: selectedName || (result.names[0]?.name ?? '상품'),
-                tagline: result.tagline,
-                description: result.description,
-                keywords: result.keywords ?? [],
-                features: result.features ?? [],
-                thumbnailUrl: result.primaryThumbnailUrl,
-              }}
-            />
+                thumbnailUrl: heroImage,
+              }
+              return (
+                <DetailPageEditor
+                  sections={detailPageSections ?? buildDefaultSections(defaultsCommon)}
+                  onChange={onChangeDetailSections}
+                  projectId={projectId}
+                  defaults={defaultsCommon}
+                />
+              )
+            })()
           ) : (
             // Fallback (구버전 호출자) — 정적 HTML 생성 UI 유지
             <LegacyDetailPagePanel
@@ -450,10 +499,10 @@ export function ResultCard({
         </section>
       )}
 
-      {/* 스튜디오 모드 전용: 공유 */}
+      {/* 스튜디오 모드 전용: 07 공유 (이전 06) */}
       {mode === 'studio' && (
         <section className="mb-8">
-          <SectionHeader number="06" title="공유하기" />
+          <SectionHeader number="07" title="공유하기" />
           <div
             className="grid grid-cols-3"
             style={{ border: '1px solid #e5e5e5' }}

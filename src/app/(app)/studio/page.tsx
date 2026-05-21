@@ -69,20 +69,40 @@ function StudioPageInner() {
   }, [])
 
   // ─── 히스토리에서 프로젝트 복원 (#3) ──────────────────────────────────
+  // Phase 4: 명확한 로딩 상태 + 에러 처리
+  const [historyLoadError, setHistoryLoadError] = useState<string | null>(null)
+  const [historyProjectMeta, setHistoryProjectMeta] = useState<{
+    imageUrl: string | null
+    createdAt: string | null
+  } | null>(null)
+
   useEffect(() => {
     const projectId = searchParams.get('projectId')
     if (!projectId || store.status !== 'idle') return
 
     const loadProject = async () => {
+      // 즉시 로딩 상태로 전환 + 메타 표시
+      store.setStatus('loading_history', 0)
+      setHistoryLoadError(null)
+
       try {
         const supabase = createClient()
-        const { data: project } = await supabase
+        const { data: project, error } = await supabase
           .from('projects')
-          .select('id, mode, product_image_url, generations(type, payload)')
+          .select('id, mode, product_image_url, created_at, generations(type, payload)')
           .eq('id', projectId)
           .single()
 
-        if (!project) return
+        if (error) throw error
+        if (!project) {
+          throw new Error('프로젝트를 찾을 수 없습니다.')
+        }
+
+        // 미리 메타 표시 (썸네일 즉시 노출)
+        setHistoryProjectMeta({
+          imageUrl: project.product_image_url,
+          createdAt: project.created_at,
+        })
 
         type Gen = { type: string; payload: Record<string, unknown> }
         const gens = (project.generations as Gen[]) ?? []
@@ -91,7 +111,9 @@ function StudioPageInner() {
         const descG    = gens.find((g) => g.type === 'description')
         const analyzeG = gens.find((g) => g.type === 'analyze')
 
-        if (!naming || !taglineG || !descG) return
+        if (!naming || !taglineG || !descG) {
+          throw new Error('이 프로젝트는 아직 생성이 완료되지 않았습니다.')
+        }
 
         store.setMode(project.mode as StudioMode)
         store.setProjectId(projectId)
@@ -111,6 +133,9 @@ function StudioPageInner() {
         router.replace('/studio')
       } catch (err) {
         console.error('[StudioPage] loadProject failed:', err)
+        const message = err instanceof Error ? err.message : '불러오기 실패'
+        setHistoryLoadError(message)
+        store.setStatus('idle', 0)
       }
     }
 
@@ -414,6 +439,87 @@ function StudioPageInner() {
     await Promise.all(tasks)
   }, [handleRegenerateNaming, handleRegenerateTagline, handleRegenerateDescription])
 
+  // ─── Phase 4 — AI Fitting 핸들러 ────────────────────────────────────────
+  // 마지막 모델 이미지 로드 (user_profiles.last_model_image_url 에서)
+  const [lastModelImageUrl, setLastModelImageUrl] = useState<string | null>(null)
+  useEffect(() => {
+    const loadLastModel = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('last_model_image_url')
+        .eq('id', user.id)
+        .single()
+      if (data?.last_model_image_url) setLastModelImageUrl(data.last_model_image_url)
+    }
+    loadLastModel()
+  }, [])
+
+  const handleAIFitting = useCallback(async () => {
+    if (!store.projectId || !store.result) throw new Error('프로젝트가 없습니다.')
+
+    // 모델 이미지 결정 우선순위:
+    // 1. 막 업로드한 base64 (store.modelImageBase64)
+    // 2. 현재 store 의 url
+    // 3. 마지막 모델 URL (reuseLastModel = true 일 때)
+    const useBase64 = store.modelImageBase64
+    const useUrl = store.modelImageUrl ?? (store.reuseLastModel ? lastModelImageUrl : null)
+    if (!useBase64 && !useUrl) throw new Error('모델 사진을 먼저 업로드해주세요.')
+
+    const productImage = store.uploadedImageBase64 ?? store.uploadedImageUrl ?? null
+    if (!productImage) throw new Error('원본 제품 이미지가 없습니다.')
+
+    const res = await fetch('/api/generate/ai-fitting', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectId: store.projectId,
+        productImageBase64: store.uploadedImageBase64 ?? undefined,
+        productImageUrl: !store.uploadedImageBase64 ? store.uploadedImageUrl : undefined,
+        modelImageBase64: useBase64 ?? undefined,
+        modelImageUrl: !useBase64 ? useUrl : undefined,
+        aspectRatios: ['1:1', '4:5', '9:16'],
+        resolution: store.thumbnailResolution,
+        category: effectiveAnalysis.category ?? '패션 아이템',
+        productKeyFeatures: effectiveAnalysis.keyFeatures ?? [],
+        saveAsLastModel: !!useBase64,  // base64 로 새로 올린 경우만 last_model 갱신
+      }),
+    })
+
+    if (res.status === 402) {
+      const err = await res.json()
+      const gr = err.guardResult as CreditGuardResult
+      setGuardModal({
+        open: true,
+        result: gr,
+        reason: gr?.reason?.includes('Pro') ? 'plan_required' : 'insufficient_credits',
+      })
+      return
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'AI Fitting 실패' }))
+      throw new Error(err.error ?? 'AI Fitting 실패')
+    }
+    const data = await res.json()
+    // fittings 적용
+    const items = (data.fittings ?? []).map((f: { result_url?: string; url?: string; aspect_ratio?: string; aspectRatio?: string; width: number; height: number; model_image_url?: string | null }) => ({
+      url: f.result_url ?? f.url ?? '',
+      aspectRatio: f.aspect_ratio ?? f.aspectRatio ?? '1:1',
+      width: f.width,
+      height: f.height,
+      modelImageUrl: f.model_image_url ?? null,
+    }))
+    store.setAiFittings(items)
+    // 마지막 모델 URL 갱신 (재사용 가능)
+    if (data.modelImageUrl) {
+      setLastModelImageUrl(data.modelImageUrl)
+      store.setModelImage(data.modelImageUrl, null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.projectId, store.result, store.modelImageBase64, store.modelImageUrl, store.reuseLastModel, store.uploadedImageBase64, store.uploadedImageUrl, store.thumbnailResolution, lastModelImageUrl, effectiveAnalysis])
+
   // Phase 2 — 썸네일 핀 재롤
   const handleRerollThumbnails = useCallback(async (refinement: string) => {
     if (!store.projectId || !store.uploadedImageBase64 || !store.result) return
@@ -538,6 +644,20 @@ function StudioPageInner() {
               onRerollThumbnails={handleRerollThumbnails}
               detailPageSections={store.detailPageSections}
               onChangeDetailSections={store.setDetailPageSections}
+
+              // Phase 4 — AI Fitting
+              productImageUrl={store.uploadedImageUrl}
+              lastModelImageUrl={lastModelImageUrl}
+              currentModelBase64={store.modelImageBase64}
+              currentModelUrl={store.modelImageUrl}
+              reuseLastModel={store.reuseLastModel}
+              onToggleReuseModel={store.toggleReuseLastModel}
+              onModelUpload={(base64) => store.setModelImage(null, base64)}
+              onModelClear={store.clearModelImage}
+              onGenerateAIFitting={handleAIFitting}
+              aiFittings={store.aiFittings}
+              selectedFittingUrl={store.selectedFittingUrl}
+              onSelectFittingHero={store.selectFittingHero}
             />
           </div>
 
@@ -564,6 +684,83 @@ function StudioPageInner() {
             creditsLeft={creditsLeft}
           />
         )}
+      </div>
+    )
+  }
+
+  // ─── 히스토리 로딩 화면 (Phase 4) ──────────────────────────────────────
+  if (store.status === 'loading_history') {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center max-w-sm px-6">
+          {/* 히스토리 썸네일 미리보기 */}
+          {historyProjectMeta?.imageUrl ? (
+            <div
+              className="w-32 h-32 mx-auto overflow-hidden mb-6 relative"
+              style={{ border: '1px solid #e5e5e5' }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={historyProjectMeta.imageUrl}
+                alt="이전 작업 썸네일"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
+                <Loader2 className="w-8 h-8 text-white animate-spin" />
+              </div>
+            </div>
+          ) : (
+            <div className="w-16 h-16 mx-auto bg-[#111111] flex items-center justify-center mb-6">
+              <Loader2 className="w-8 h-8 text-white animate-spin" />
+            </div>
+          )}
+          <h2 className="text-[22px] font-black text-[#111111] mb-2">
+            이전 작업 불러오는 중
+          </h2>
+          <p className="text-[14px] text-[#707072]">
+            히스토리에서 선택한 프로젝트를 복원하고 있습니다...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── 히스토리 로딩 실패 화면 (Phase 4) ─────────────────────────────────
+  if (historyLoadError) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div
+          className="max-w-md mx-auto p-8 text-center"
+          style={{ border: '1px solid #fecaca', backgroundColor: '#fff5f5' }}
+        >
+          <div className="w-12 h-12 mx-auto mb-4 flex items-center justify-center" style={{ backgroundColor: '#d30005' }}>
+            <span className="text-white text-2xl">!</span>
+          </div>
+          <h2 className="text-[20px] font-black text-[#111111] mb-2">
+            프로젝트를 불러올 수 없습니다
+          </h2>
+          <p className="text-[13px] text-[#707072] mb-6">
+            {historyLoadError}
+          </p>
+          <div className="flex justify-center gap-2">
+            <button
+              onClick={() => router.push('/history')}
+              className="px-4 h-10 rounded-full text-[13px] font-semibold text-[#111111] hover:bg-white transition-colors"
+              style={{ border: '1px solid #cacacb' }}
+            >
+              ← 히스토리로
+            </button>
+            <button
+              onClick={() => {
+                setHistoryLoadError(null)
+                router.replace('/studio')
+              }}
+              className="px-4 h-10 rounded-full text-[13px] font-semibold text-white bg-[#111111] hover:bg-[#333333] transition-colors"
+            >
+              새로 시작
+            </button>
+          </div>
+        </div>
       </div>
     )
   }

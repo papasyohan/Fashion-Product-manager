@@ -160,7 +160,7 @@ function assembleDetailPage(d: DetailPageInput): string {
 </head>
 <body>
 
-<!-- 01. Hero -->
+<!-- 01. Hero — D-4: 제목 → 카피 → 이미지 순서 -->
 <section class="hero">
   <div class="hero-category">${escapeHtml(d.category)}</div>
   <h1 class="hero-title">${escapeHtml(d.productName)}</h1>
@@ -281,10 +281,11 @@ ${htmlBody}
 function renderSection(s: DetailSection): string {
   switch (s.type) {
     case 'hero': {
+      // D-4: 제목 → 카피 → 이미지 순서 (매거진 헤드라인 패턴)
       const img = s.image
-        ? `<img src="${escapeHtml(s.image)}" alt="${escapeHtml(s.title)}" />`
+        ? `<img src="${escapeHtml(s.image)}" alt="${escapeHtml(s.title)}" class="hero-img" />`
         : ''
-      return `<section class="hero">${img}<h1>${escapeHtml(s.title)}</h1><p>${escapeHtml(s.tagline)}</p></section>`
+      return `<section class="hero"><h1>${escapeHtml(s.title)}</h1><p>${escapeHtml(s.tagline)}</p>${img}</section>`
     }
     case 'features': {
       const items = s.items.slice(0, 12)

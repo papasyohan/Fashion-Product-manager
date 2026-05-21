@@ -6,7 +6,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { UserProfile } from '@/types/supabase'
 
-type Operation = 'quick' | 'studio_text' | 'studio_thumbnail'
+type Operation = 'quick' | 'studio_text' | 'studio_thumbnail' | 'studio_fitting'
 type Resolution = '1K' | '2K' | '4K'
 type Plan = 'free' | 'starter' | 'pro' | 'business'
 
@@ -14,6 +14,7 @@ export const CREDIT_COSTS: Record<Operation, number> = {
   quick: 1,
   studio_text: 1,
   studio_thumbnail: 3,
+  studio_fitting: 5,  // Phase 4 — AI Fitting (모델 합성, multi-reference)
 }
 
 // 4K는 Pro 이상만 허용
@@ -21,6 +22,11 @@ const RESOLUTION_PLAN_GATE: Record<Resolution, Plan[]> = {
   '1K': ['free', 'starter', 'pro', 'business'],
   '2K': ['starter', 'pro', 'business'],
   '4K': ['pro', 'business'],
+}
+
+// Phase 4 — Operation 별 플랜 게이트 (해상도와 별개)
+const OPERATION_PLAN_GATE: Partial<Record<Operation, Plan[]>> = {
+  studio_fitting: ['pro', 'business'],  // AI Fitting 은 Pro 이상만
 }
 
 export interface CreditGuardResult {
@@ -83,6 +89,19 @@ export async function checkCreditGuard(
   }
 
   const required = CREDIT_COSTS[operation]
+
+  // Phase 4 — Operation 자체 플랜 게이트 (예: AI Fitting 은 Pro 이상)
+  const opAllowedPlans = OPERATION_PLAN_GATE[operation]
+  if (opAllowedPlans && !opAllowedPlans.includes(plan)) {
+    const opLabel: Partial<Record<Operation, string>> = {
+      studio_fitting: 'AI Fitting',
+    }
+    return {
+      allowed: false,
+      reason: `${opLabel[operation] ?? operation} 기능은 Pro 이상 플랜에서만 사용 가능합니다.`,
+      upgradeUrl: '/billing',
+    }
+  }
 
   // 해상도 플랜 게이팅 (보안 규칙: 4K는 Pro 이상)
   const allowedPlans = RESOLUTION_PLAN_GATE[resolution]

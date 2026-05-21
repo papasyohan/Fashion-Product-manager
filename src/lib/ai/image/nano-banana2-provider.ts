@@ -120,10 +120,13 @@ export class NanaBanana2Provider implements IImageGenProvider {
 
     try {
       // 참조 이미지 파트 구성
+      // Phase 4: multi-reference 지원 (slice(0,1) 제거)
+      // - 단일 이미지 (썸네일): [제품] 만 전달
+      // - 멀티 이미지 (AI Fitting): [제품, 모델] 순서로 전달
+      // Nano Banana 2 는 최대 5장의 reference 까지 처리 가능.
       const parts: object[] = []
 
-      for (const ref of referenceImages.slice(0, 1)) {
-        // 첫 번째 참조 이미지만 Subject Anchor로 사용
+      for (const ref of referenceImages.slice(0, 5)) {
         if (ref.startsWith('data:')) {
           const [header, data] = ref.split(',')
           const mimeType = header.split(':')[1]?.split(';')[0] ?? 'image/jpeg'

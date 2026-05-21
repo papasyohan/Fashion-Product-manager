@@ -151,11 +151,17 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
             const ModeIcon = project.mode === 'quick' ? Zap : Wand2
 
             return (
-              <div
+              <Link
                 key={project.id}
-                className="group flex items-center gap-4 p-5 hover:bg-[#f5f5f5] transition-colors"
+                href={`/studio?projectId=${project.id}`}
+                className="group flex items-center gap-4 p-5 hover:bg-[#f5f5f5] transition-all cursor-pointer relative"
                 style={{ border: '1px solid #e5e5e5', backgroundColor: '#ffffff' }}
               >
+                {/* hover 시 좌측 검정 인디케이터 */}
+                <span
+                  className="absolute left-0 top-0 bottom-0 w-1 bg-[#111111] opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-hidden
+                />
                 {/* 썸네일 */}
                 <div
                   className="w-16 h-16 overflow-hidden flex-shrink-0"
@@ -221,16 +227,16 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
                 {/* 액션 */}
                 <div className="flex items-center gap-2">
                   {deleteState[project.id] === 'confirm' ? (
-                    <div className="flex items-center gap-1.5" onClick={(e) => e.preventDefault()}>
+                    <div className="flex items-center gap-1.5" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
                       <button
-                        onClick={() => handleDeleteCancel(project.id)}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteCancel(project.id) }}
                         className="px-3 py-1 rounded-full text-[12px] font-semibold text-[#707072] hover:text-[#111111] transition-colors"
                         style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }}
                       >
                         취소
                       </button>
                       <button
-                        onClick={() => handleDeleteConfirm(project.id)}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteConfirm(project.id) }}
                         className="px-3 py-1 rounded-full text-[12px] font-semibold text-white transition-colors"
                         style={{ backgroundColor: '#d30005' }}
                       >
@@ -247,21 +253,23 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
                       title="삭제"
                       onClick={(e) => {
                         e.preventDefault()
+                        e.stopPropagation()
                         handleDeleteClick(project.id)
                       }}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
-                  <Link
-                    href={`/studio?projectId=${project.id}`}
-                    className="p-2 rounded-full text-[#9e9ea0] hover:text-[#111111] hover:bg-[#f5f5f5] transition-colors"
-                    title="다시 열기"
+                  {/* 명확한 CTA — 결과 보기 */}
+                  <span
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-semibold text-[#111111] transition-colors opacity-100 md:opacity-0 group-hover:opacity-100"
+                    style={{ backgroundColor: '#f5f5f5', border: '1px solid #cacacb' }}
                   >
-                    <ChevronRight className="w-5 h-5" />
-                  </Link>
+                    결과 보기
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </span>
                 </div>
-              </div>
+              </Link>
             )
           })}
         </div>

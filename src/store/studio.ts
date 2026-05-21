@@ -25,7 +25,8 @@ export type StudioMode = 'quick' | 'studio'
 
 export type StudioStatus =
   | 'idle'
-  | 'intent'   // v1.1 — L1: 모드 선택 후 의도 입력 단계
+  | 'intent'             // v1.1 — L1: 모드 선택 후 의도 입력 단계
+  | 'loading_history'    // v1.2 — 히스토리에서 프로젝트 복원 중
   | 'uploading'
   | 'analyzing'
   | 'generating_names'
@@ -111,6 +112,25 @@ export interface StudioStore {
   trendKeywords: string[]
   detailPageSections: DetailSection[] | null
 
+  // Phase 4 — AI Fitting
+  /** 현재 업로드된 모델 이미지 (base64 — 막 업로드한 경우) */
+  modelImageBase64: string | null
+  /** 모델 이미지 URL (Storage 에 저장된 경우, 재사용 가능) */
+  modelImageUrl: string | null
+  /** "같은 모델로 다시 피팅" / "다른 모델 사용" 사용자 선택 */
+  reuseLastModel: boolean
+  /** 생성된 AI Fitting 결과들 */
+  aiFittings: Array<{
+    id?: string
+    url: string
+    aspectRatio: string
+    width: number
+    height: number
+    modelImageUrl?: string | null
+  }>
+  /** 결과 페이지의 hero 이미지로 선택된 fitting URL */
+  selectedFittingUrl: string | null
+
   // ─── Actions ───────────────────────────────────────────────────────────
   setMode: (mode: StudioMode) => void
   setImage: (url: string, base64?: string) => void
@@ -144,6 +164,14 @@ export interface StudioStore {
   setThumbnailResolution: (r: Resolution) => void
   setTrendKeywords: (items: string[]) => void
   setDetailPageSections: (sections: DetailSection[] | null) => void
+
+  // Phase 4 — AI Fitting
+  setModelImage: (url: string | null, base64?: string | null) => void
+  clearModelImage: () => void
+  toggleReuseLastModel: () => void
+  setAiFittings: (items: StudioStore['aiFittings']) => void
+  addAiFittings: (items: StudioStore['aiFittings']) => void
+  selectFittingHero: (url: string | null) => void
 }
 
 // ─── 초기 상태 ─────────────────────────────────────────────────────────────
@@ -170,6 +198,13 @@ const initialState = {
   thumbnailResolution: '2K' as Resolution,
   trendKeywords: [],
   detailPageSections: null as DetailSection[] | null,
+
+  // Phase 4 — AI Fitting
+  modelImageBase64: null,
+  modelImageUrl: null,
+  reuseLastModel: true,
+  aiFittings: [] as StudioStore['aiFittings'],
+  selectedFittingUrl: null,
 }
 
 // ─── Store 정의 (전역 1개만 허용) ──────────────────────────────────────────
@@ -303,6 +338,30 @@ export const useStudioStore = create<StudioStore>((set, get) => ({
   setTrendKeywords: (items) => set({ trendKeywords: items }),
 
   setDetailPageSections: (sections) => set({ detailPageSections: sections }),
+
+  // ─── Phase 4 — AI Fitting ───────────────────────────────────────────────
+  setModelImage: (url, base64) =>
+    set({ modelImageUrl: url, modelImageBase64: base64 ?? null }),
+
+  clearModelImage: () =>
+    set({ modelImageBase64: null, modelImageUrl: null, aiFittings: [], selectedFittingUrl: null }),
+
+  toggleReuseLastModel: () =>
+    set((state) => ({ reuseLastModel: !state.reuseLastModel })),
+
+  setAiFittings: (items) =>
+    set({
+      aiFittings: items,
+      selectedFittingUrl: items[0]?.url ?? null,
+    }),
+
+  addAiFittings: (items) =>
+    set((state) => ({
+      aiFittings: [...state.aiFittings, ...items],
+      selectedFittingUrl: state.selectedFittingUrl ?? items[0]?.url ?? null,
+    })),
+
+  selectFittingHero: (url) => set({ selectedFittingUrl: url }),
 }))
 
 // ─── 편의 셀렉터 ───────────────────────────────────────────────────────────
@@ -315,6 +374,7 @@ export const selectStatusLabel = (status: StudioStatus): string => {
   const labels: Record<StudioStatus, string> = {
     idle: '대기 중',
     intent: '의도 입력 중',
+    loading_history: '이전 작업 불러오는 중...',
     uploading: '이미지 업로드 중...',
     analyzing: '이미지 분석 중...',
     generating_names: '상품명 생성 중...',
