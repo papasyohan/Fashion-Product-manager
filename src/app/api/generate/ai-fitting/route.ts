@@ -16,7 +16,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
+import { checkCreditGuard, deductCredits, aiFittingCredits } from '@/lib/credit-guard'
 import { buildAiFittingPrompt } from '@/lib/prompts/image/ai-fitting'
 import { NanaBanana2Provider } from '@/lib/ai/image/nano-banana2-provider'
 import { setImageProvider, getImageProvider } from '@/lib/ai/client'
@@ -80,11 +80,14 @@ export async function POST(request: NextRequest) {
     if (!productImage) return NextResponse.json({ error: '제품 이미지가 필요합니다.' }, { status: 400 })
     if (!modelImage)   return NextResponse.json({ error: '모델 이미지가 필요합니다.' }, { status: 400 })
 
-    // ── 크레딧 가드 (5 크레딧 + Pro 이상) ─────────────────────────────────
+    // ── 크레딧 가드 (D안 동적 비용 + Pro 이상) ────────────────────────────
+    // 1장=2 / 2장=4 / 3장=5 / 4장+=6 (aiFittingCredits 헬퍼)
+    const requiredCredits = aiFittingCredits(aspectRatios.length)
     const guard = await checkCreditGuard({
       userId: user.id,
       operation: 'studio_fitting',
       resolution: resolution as Resolution,
+      creditsOverride: requiredCredits,
     })
     if (!guard.allowed) {
       return NextResponse.json(
@@ -177,13 +180,13 @@ export async function POST(request: NextRequest) {
       .insert(inserts)
       .select('id, result_url, aspect_ratio, width, height, model_image_url')
 
-    // ── usage_events + 크레딧 차감 ────────────────────────────────────────
+    // ── usage_events + 크레딧 차감 (D안 동적 비용) ────────────────────────
     await Promise.all([
       supabase.from('usage_events').insert({
         user_id: user.id,
         project_id: projectId,
         event_type: 'ai_fitting_generated',
-        credits_used: 5,
+        credits_used: requiredCredits,
         metadata: {
           count: genResult.images.length,
           aspectRatios,
@@ -192,7 +195,7 @@ export async function POST(request: NextRequest) {
           requestId: genResult.requestId,
         },
       }),
-      deductCredits({ userId: user.id, operation: 'studio_fitting' }),
+      deductCredits({ userId: user.id, operation: 'studio_fitting', amount: requiredCredits }),
     ])
 
     const elapsed = Date.now() - startTime

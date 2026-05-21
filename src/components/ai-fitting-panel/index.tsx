@@ -41,13 +41,31 @@ interface AIFittingPanelProps {
   /** 모델 업로드 콜백 */
   onModelUpload: (base64: string) => void
   onModelClear: () => void
-  /** AI Fitting 생성 콜백 */
-  onGenerate: () => Promise<void>
+  /**
+   * AI Fitting 생성 콜백 — D안: 선택된 비율 목록을 전달
+   * 빈 배열이면 생성 안 함 (체크박스 모두 해제 시)
+   */
+  onGenerate: (aspectRatios: string[]) => Promise<void>
   /** 생성 결과 */
   fittings: FittingResult[]
   /** 결과 hero 선택 */
   selectedFittingUrl: string | null
   onSelectHero: (url: string) => void
+}
+
+// ─── D안 — 비율별 채널 힌트 ─────────────────────────────────────────────────
+const RATIO_OPTIONS: Array<{ value: string; label: string; channel: string }> = [
+  { value: '1:1',  label: '1:1',  channel: '인스타 피드 · 스마트스토어 메인' },
+  { value: '4:5',  label: '4:5',  channel: '인스타 세로 · 쿠팡 메인' },
+  { value: '9:16', label: '9:16', channel: '인스타 스토리·릴스' },
+]
+
+// 비율 개수별 크레딧 (서버 aiFittingCredits 와 동일 로직)
+function ratiosToCredits(count: number): number {
+  if (count <= 1) return 2
+  if (count === 2) return 4
+  if (count === 3) return 5
+  return 6
 }
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -57,6 +75,21 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // D안 — 생성할 비율 선택 (기본: 3개 모두 체크)
+  const [selectedRatios, setSelectedRatios] = useState<Set<string>>(
+    new Set(['1:1', '4:5', '9:16'])
+  )
+  const toggleRatio = (ratio: string) => {
+    setSelectedRatios((prev) => {
+      const next = new Set(prev)
+      if (next.has(ratio)) next.delete(ratio)
+      else next.add(ratio)
+      return next
+    })
+  }
+  const selectedCount = selectedRatios.size
+  const requiredCredits = ratiosToCredits(selectedCount)
 
   // 현재 표시할 모델 이미지 결정
   // - reuseLastModel = true + lastModelImageUrl 있으면 → 재사용
@@ -94,12 +127,16 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
 
   const triggerFileSelect = () => fileInputRef.current?.click()
 
-  // ─── 생성 핸들러 ────────────────────────────────────────────────────────
+  // ─── 생성 핸들러 — D안: 선택된 비율 목록 전달 ──────────────────────────
   const handleGenerate = async () => {
+    if (selectedCount === 0) {
+      setError('생성할 비율을 최소 1개 선택해주세요.')
+      return
+    }
     setError(null)
     setGenerating(true)
     try {
-      await p.onGenerate()
+      await p.onGenerate(Array.from(selectedRatios))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'AI Fitting 실패')
     } finally {
@@ -118,9 +155,60 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
         style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }}
       >
         <strong className="text-[#111111]">✨ AI Fitting</strong> · 모델 사진을 업로드하시면
-        AI 가 원본 제품을 그 모델에 자연스럽게 입혀준 합성 이미지 3장 (1:1·4:5·9:16) 을 생성합니다.
+        AI 가 원본 제품을 그 모델에 자연스럽게 입혀준 합성 이미지를 만들어드립니다.
         <br />
-        <span className="text-[10px]">⚠️ 본인 또는 동의를 받은 인물의 사진만 업로드해주세요. SynthID 워터마크가 자동 삽입됩니다. (5크레딧 · Pro 이상)</span>
+        <span className="text-[10px]">⚠️ 본인 또는 동의를 받은 인물의 사진만 업로드해주세요. SynthID 워터마크가 자동 삽입됩니다. (Pro 이상 · 비율 개수별 차등 크레딧)</span>
+      </div>
+
+      {/* D안 — 생성할 비율 체크박스 + 채널 힌트 */}
+      <div
+        className="p-3"
+        style={{ backgroundColor: '#ffffff', border: '1px solid #e5e5e5' }}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-[#9e9ea0]">
+            생성할 비율 선택
+          </span>
+          <span className="text-[10px] text-[#9e9ea0]">
+            {selectedCount === 0 ? '비율을 선택하세요' : `${selectedCount}장 · ${requiredCredits} 크레딧`}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {RATIO_OPTIONS.map((opt) => {
+            const checked = selectedRatios.has(opt.value)
+            return (
+              <button
+                key={opt.value}
+                onClick={() => toggleRatio(opt.value)}
+                disabled={generating}
+                className="flex items-start gap-2 p-2.5 text-left transition-colors hover:bg-[#f5f5f5] disabled:opacity-50"
+                style={{
+                  backgroundColor: checked ? '#f5f5f5' : '#ffffff',
+                  border: `1px solid ${checked ? '#111111' : '#e5e5e5'}`,
+                }}
+              >
+                {/* 체크박스 */}
+                <span
+                  className="mt-0.5 flex-shrink-0 w-4 h-4 inline-flex items-center justify-center"
+                  style={{
+                    backgroundColor: checked ? '#111111' : '#ffffff',
+                    border: `1px solid ${checked ? '#111111' : '#cacacb'}`,
+                  }}
+                >
+                  {checked && (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <path d="M1.5 5 L4 7.5 L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[12px] font-bold text-[#111111]">{opt.label}</span>
+                  <span className="block text-[10px] text-[#9e9ea0] mt-0.5">{opt.channel}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* 3-패널 그리드 */}
@@ -220,10 +308,10 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
             onChange={handleFileChange}
           />
 
-          {/* AI Fitting 실행 버튼 */}
+          {/* AI Fitting 실행 버튼 — D안: 동적 라벨 */}
           <button
             onClick={handleGenerate}
-            disabled={!hasModel || generating}
+            disabled={!hasModel || generating || selectedCount === 0}
             className="mt-3 inline-flex items-center justify-center gap-1.5 px-3 h-10 rounded-full text-[12px] font-bold text-white bg-[#111111] hover:bg-[#333333] transition-colors disabled:opacity-40"
           >
             {generating ? (
@@ -231,10 +319,15 @@ export function AIFittingPanel(p: AIFittingPanelProps) {
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 생성 중...
               </>
+            ) : selectedCount === 0 ? (
+              <>
+                <Sparkles className="w-3.5 h-3.5" />
+                비율 선택 필요
+              </>
             ) : (
               <>
                 <Sparkles className="w-3.5 h-3.5" />
-                AI Fitting
+                AI Fitting · {selectedCount}장 · {requiredCredits}크레딧
               </>
             )}
           </button>

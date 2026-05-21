@@ -457,8 +457,9 @@ function StudioPageInner() {
     loadLastModel()
   }, [])
 
-  const handleAIFitting = useCallback(async () => {
+  const handleAIFitting = useCallback(async (aspectRatios: string[]) => {
     if (!store.projectId || !store.result) throw new Error('프로젝트가 없습니다.')
+    if (!aspectRatios || aspectRatios.length === 0) throw new Error('비율을 선택해주세요.')
 
     // 모델 이미지 결정 우선순위:
     // 1. 막 업로드한 base64 (store.modelImageBase64)
@@ -480,7 +481,7 @@ function StudioPageInner() {
         productImageUrl: !store.uploadedImageBase64 ? store.uploadedImageUrl : undefined,
         modelImageBase64: useBase64 ?? undefined,
         modelImageUrl: !useBase64 ? useUrl : undefined,
-        aspectRatios: ['1:1', '4:5', '9:16'],
+        aspectRatios,  // D안: 사용자가 선택한 비율만
         resolution: store.thumbnailResolution,
         category: effectiveAnalysis.category ?? '패션 아이템',
         productKeyFeatures: effectiveAnalysis.keyFeatures ?? [],

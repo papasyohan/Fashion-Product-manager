@@ -41,9 +41,22 @@ export interface CreditGuardParams {
   userId: string
   operation: Operation
   resolution?: Resolution
+  /** 동적 비용 (Phase 4 D안 — AI Fitting 비율 개수별 차등) */
+  creditsOverride?: number
   // 테스트용 mock 파라미터
   mockCreditsLeft?: number
   mockPlan?: Plan
+}
+
+/**
+ * Phase 4 D안 — AI Fitting 의 비율 개수별 동적 크레딧.
+ * 1장 = 2 / 2장 = 4 / 3장 = 5 (할인) / 4장+ = 6
+ */
+export function aiFittingCredits(count: number): number {
+  if (count <= 1) return 2
+  if (count === 2) return 4
+  if (count === 3) return 5
+  return 6
 }
 
 export async function checkCreditGuard(
@@ -56,7 +69,7 @@ export async function checkCreditGuard(
   }
   // ─────────────────────────────────────────────────────────────────────────
 
-  const { userId, operation, resolution = '2K', mockCreditsLeft, mockPlan } = params
+  const { userId, operation, resolution = '2K', creditsOverride, mockCreditsLeft, mockPlan } = params
 
   let creditsLeft: number
   let plan: Plan
@@ -88,7 +101,8 @@ export async function checkCreditGuard(
     plan = profile.plan as Plan
   }
 
-  const required = CREDIT_COSTS[operation]
+  // Phase 4 — 동적 비용 override 우선 (AI Fitting 비율 개수별)
+  const required = creditsOverride ?? CREDIT_COSTS[operation]
 
   // Phase 4 — Operation 자체 플랜 게이트 (예: AI Fitting 은 Pro 이상)
   const opAllowedPlans = OPERATION_PLAN_GATE[operation]
@@ -132,16 +146,19 @@ export async function checkCreditGuard(
 
 /**
  * 크레딧 차감 (생성 성공 후 호출)
+ * Phase 4: 동적 비용 amount override 지원
  */
 export async function deductCredits(params: {
   userId: string
   operation: Operation
+  /** 동적 비용 (없으면 CREDIT_COSTS 기본값) */
+  amount?: number
 }): Promise<void> {
   // 개발 우회 모드: 실제 차감 스킵
   if (process.env.DEV_BYPASS_CREDITS === 'true') return
 
   const supabase = await createClient()
-  const cost = CREDIT_COSTS[params.operation]
+  const cost = params.amount ?? CREDIT_COSTS[params.operation]
 
   await supabase.rpc('deduct_credits', {
     p_user_id: params.userId,

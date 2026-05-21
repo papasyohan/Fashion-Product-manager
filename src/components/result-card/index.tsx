@@ -59,7 +59,7 @@ interface ResultCardProps {
   onToggleReuseModel?: () => void
   onModelUpload?: (base64: string) => void
   onModelClear?: () => void
-  onGenerateAIFitting?: () => Promise<void>
+  onGenerateAIFitting?: (aspectRatios: string[]) => Promise<void>
   aiFittings?: Array<{ url: string; aspectRatio: string; width: number; height: number; modelImageUrl?: string | null }>
   selectedFittingUrl?: string | null
   onSelectFittingHero?: (url: string) => void
