@@ -277,14 +277,24 @@ export async function POST(request: NextRequest) {
           message = String(err)
         }
 
-        // 사용자 친화 메시지 변환
-        let userMessage = `[${currentStep ?? 'unknown'}] ${message}`
-        if (/credit|credit_balance|insufficient/i.test(message)) {
-          userMessage = 'AI API 크레딧이 부족합니다. 잔액을 확인해주세요.'
-        } else if (/401|unauthorized|invalid.*api.*key/i.test(message)) {
-          userMessage = 'AI API 키가 유효하지 않습니다.'
+        // 사용자 친화 메시지 변환 — 어느 단계 + 프로바이더 힌트 포함
+        const stepLabel = currentStep ?? 'unknown'
+        let userMessage = `[${stepLabel}] ${message}`
+        if (/credit_balance|credits.*low|insufficient.*credit|low.*credit.*balance/i.test(message)) {
+          // Anthropic 잔액 부족
+          userMessage = `[${stepLabel}] Anthropic Claude API 잔액이 부족합니다. ` +
+            `https://console.anthropic.com/settings/billing 에서 충전하시거나, ` +
+            `Vercel env vars 의 MODEL_${stepLabel.toUpperCase()} 를 google:gemini-2.5-pro 로 전환하세요. ` +
+            `원본 에러: "${message.slice(0, 200)}"`
+        } else if (/quota|rate.?limit.*exceeded.*free.?tier/i.test(message)) {
+          // Google API 할당량 초과
+          userMessage = `[${stepLabel}] Google AI API 할당량을 초과했습니다. ` +
+            `https://aistudio.google.com/app/apikey 에서 결제 활성화 또는 잠시 후 재시도. ` +
+            `원본 에러: "${message.slice(0, 200)}"`
+        } else if (/401|unauthorized|invalid.*api.*key|x-api-key/i.test(message)) {
+          userMessage = `[${stepLabel}] AI API 키가 유효하지 않습니다. Vercel env vars 확인 필요. 원본 에러: "${message.slice(0, 200)}"`
         } else if (/no object generated|could not parse/i.test(message)) {
-          userMessage = `${currentStep ?? 'AI'} 단계에서 응답을 해석할 수 없었습니다. 다시 시도해주세요. (1순위·2순위 모델 모두 실패: "${message.slice(0, 200)}")`
+          userMessage = `[${stepLabel}] AI 응답을 해석할 수 없었습니다 (1순위·2순위 모델 모두 실패). 다시 시도해주세요. 원본 에러: "${message.slice(0, 200)}"`
         }
         emit({ type: 'error', message: userMessage, step: currentStep })
         controller.close()

@@ -61,21 +61,38 @@ export async function generateDescription(
  * 부분 객체를 점진적으로 yield 한다.
  * streamObject 는 JSON 스키마를 만족할 때까지 부분 객체를 계속 갱신해서 보내준다.
  *
- *   const { partialObjectStream, object } = await streamDescription(params)
+ *   const { partialObjectStream, object } = streamDescription(params)
  *   for await (const partial of partialObjectStream) {
  *     // partial.description 가 점점 길어진다
  *   }
  *   const final = await object  // 완성된 DescriptionOutput
  *
- * Fallback 은 1순위 시작 직전 실패만 잡는다 (이미 스트리밍 시작된 후엔 재시도 불가).
+ * v1.2: primary 가 즉시 실패 (잔액 부족 등) 시 fallback 으로 자동 전환.
+ *       단, 이미 스트리밍 시작된 후 mid-stream 실패는 호출자가 generateDescription 으로 재시도해야 함.
  */
 export function streamDescription(params: DescriptionParams) {
-  const { primary } = resolveModels('description')
-  return streamObject({
-    model: primary,
-    schema: DescriptionSchema,
-    system: DESCRIPTION_SYSTEM_PROMPT,
-    prompt: buildDescriptionPrompt(params),
-    maxOutputTokens: params.mode === 'studio' ? 1024 : 768,
-  })
+  const { primary, fallback } = resolveModels('description')
+
+  // 1순위 시도 — onError 핸들러로 즉시 실패 캐치
+  // (AI SDK 의 streamObject 는 동기적으로 stream 객체 반환, 에러는 await stream.object 시점에 throw)
+  try {
+    return streamObject({
+      model: primary,
+      schema: DescriptionSchema,
+      system: DESCRIPTION_SYSTEM_PROMPT,
+      prompt: buildDescriptionPrompt(params),
+      maxOutputTokens: params.mode === 'studio' ? 1024 : 768,
+    })
+  } catch (err) {
+    // 동기 throw 는 거의 없지만 안전망 — 1순위 시작 자체가 실패하면 fallback
+    if (!fallback) throw err
+    console.warn('[description-agent] primary streamObject failed immediately, falling back:', err)
+    return streamObject({
+      model: fallback,
+      schema: DescriptionSchema,
+      system: DESCRIPTION_SYSTEM_PROMPT,
+      prompt: buildDescriptionPrompt(params),
+      maxOutputTokens: params.mode === 'studio' ? 1024 : 768,
+    })
+  }
 }
