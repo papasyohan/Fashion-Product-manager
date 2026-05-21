@@ -28,46 +28,45 @@ create index if not exists idx_user_profiles_banned on public.user_profiles(bann
 
 -- ─── RLS 정책 — admin 은 모든 데이터 조회 가능 ──────────────────────────────
 -- 기존 RLS 정책은 owner-only 였으므로 admin 우회 정책을 추가한다.
+--
+-- ⚠️ 중요: 정책 안에서 직접 user_profiles 를 SELECT 하면 PostgreSQL 이
+-- 그 SELECT 에도 같은 정책을 적용해 무한 재귀 (error 42P17) 가 발생한다.
+-- 따라서 RLS 를 우회하는 SECURITY DEFINER 함수 is_admin() 으로 우회한다.
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer    -- RLS 우회 (재귀 차단)
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.user_profiles
+    where id = auth.uid() and role = 'admin'
+  );
+$$;
+
+grant execute on function public.is_admin() to authenticated;
 
 drop policy if exists "admin reads all profiles" on public.user_profiles;
 create policy "admin reads all profiles"
   on public.user_profiles for select
-  using (
-    exists (
-      select 1 from public.user_profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 drop policy if exists "admin updates all profiles" on public.user_profiles;
 create policy "admin updates all profiles"
   on public.user_profiles for update
-  using (
-    exists (
-      select 1 from public.user_profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 drop policy if exists "admin reads all projects" on public.projects;
 create policy "admin reads all projects"
   on public.projects for select
-  using (
-    exists (
-      select 1 from public.user_profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 drop policy if exists "admin reads all usage_events" on public.usage_events;
 create policy "admin reads all usage_events"
   on public.usage_events for select
-  using (
-    exists (
-      select 1 from public.user_profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- ─── 감사 로그 테이블 ───────────────────────────────────────────────────────
 create table if not exists public.audit_log (
@@ -87,22 +86,12 @@ alter table public.audit_log enable row level security;
 drop policy if exists "admin reads audit_log" on public.audit_log;
 create policy "admin reads audit_log"
   on public.audit_log for select
-  using (
-    exists (
-      select 1 from public.user_profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 drop policy if exists "admin inserts audit_log" on public.audit_log;
 create policy "admin inserts audit_log"
   on public.audit_log for insert
-  with check (
-    exists (
-      select 1 from public.user_profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  with check (public.is_admin());
 
 -- ─── 운영 대시보드용 통계 view ──────────────────────────────────────────────
 create or replace view public.v_admin_stats as
