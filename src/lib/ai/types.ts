@@ -63,6 +63,7 @@ export const AnalyzeSchema = z.object({
 })
 export type AnalyzeOutput = z.infer<typeof AnalyzeSchema>
 
+// v1.1 — 모델이 정확히 3개를 못 반환해도 받아주도록 완화 (2~5개 허용)
 export const NamingSchema = z.object({
   names: z
     .array(
@@ -71,20 +72,22 @@ export const NamingSchema = z.object({
         trend: z.string().describe('해시태그 (#태그1 #태그2 형식)'),
       })
     )
-    .length(3)
-    .describe('상품명 3개 (가성비/감성/기능 각도)'),
+    .min(1).max(5)
+    .describe('상품명 (이상적으로 3개. 가성비/감성/기능 각도)'),
 })
 export type NamingOutput = z.infer<typeof NamingSchema>
 
+// v1.1 — 35자 hard limit 제거 (서버에서 트림 처리). 응답 자체가 거부되지 않게.
 export const TaglineSchema = z.object({
-  tagline: z.string().max(35).describe('한줄 홍보문구 (35자 이내)'),
-  seoKeywords: z.array(z.string()).describe('포함된 SEO 키워드'),
+  tagline: z.string().describe('한줄 홍보문구 (가능하면 35자 이내)'),
+  seoKeywords: z.array(z.string()).optional().describe('포함된 SEO 키워드'),
 })
 export type TaglineOutput = z.infer<typeof TaglineSchema>
 
+// v1.1 — highlights 옵셔널 (생성 못 해도 description 만으로 통과)
 export const DescriptionSchema = z.object({
   description: z.string().describe('상세 설명 본문 (스펙은 · 기호로 구분)'),
-  highlights: z.array(z.string()).describe('핵심 셀링포인트 3~5개'),
+  highlights: z.array(z.string()).optional().describe('핵심 셀링포인트 3~5개'),
 })
 export type DescriptionOutput = z.infer<typeof DescriptionSchema>
 

@@ -22,7 +22,7 @@ import { createClient } from '@/lib/supabase/server'
 import { analyzeProductImage } from '@/lib/ai/analyzers/image-analyzer'
 import { generateProductNames } from '@/lib/ai/generators/naming-agent'
 import { generateTagline } from '@/lib/ai/generators/tagline-agent'
-import { streamDescription } from '@/lib/ai/generators/description-agent'
+import { streamDescription, generateDescription } from '@/lib/ai/generators/description-agent'
 import { fetchTrendKeywords } from '@/lib/trends/trend-fetcher'
 import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
 import { UserIntentSchema, type PipelineEvent, type PipelineStep } from '@/lib/ai/types'
@@ -89,6 +89,8 @@ export async function POST(request: NextRequest) {
   // ─── 여기서부터 스트림 시작 ─────────────────────────────────────────────
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      // 현재 진행 중인 step — outer catch 가 어느 단계에서 실패했는지 보고용
+      let currentStep: PipelineStep | undefined = undefined
       const emit = (event: PipelineEvent) => controller.enqueue(sseEvent(event))
       const fail = (step: PipelineStep | undefined, err: unknown, status = 500) => {
         // v1.1 — Supabase 에러 객체는 Error 인스턴스가 아닐 수 있으므로 안전하게 직렬화
@@ -111,6 +113,7 @@ export async function POST(request: NextRequest) {
 
       try {
         // ── Step 1: project_create ─────────────────────────────────────────
+        currentStep = 'project_create'
         emit({ type: 'progress', step: 'project_create', percent: 5 })
         const { data: project, error: projectErr } = await supabase
           .from('projects')
@@ -132,6 +135,7 @@ export async function POST(request: NextRequest) {
         emit({ type: 'project', projectId })
 
         // ── Step 2: analyze ────────────────────────────────────────────────
+        currentStep = 'analyze'
         emit({ type: 'progress', step: 'analyze', percent: 25 })
         const analysis = await analyzeProductImage({
           imageUrl,
@@ -147,6 +151,7 @@ export async function POST(request: NextRequest) {
         })
 
         // ── Step 3: trends + naming (병렬) ─────────────────────────────────
+        currentStep = 'naming'
         emit({ type: 'progress', step: 'naming', percent: 50 })
         const [{ keywords: trendKeywords }, namingResult] = await Promise.all([
           fetchTrendKeywords({ category: analysis.category }),
@@ -171,6 +176,7 @@ export async function POST(request: NextRequest) {
         })
 
         // ── Step 4: tagline ────────────────────────────────────────────────
+        currentStep = 'tagline'
         emit({ type: 'progress', step: 'tagline', percent: 70 })
         const primaryName = namingResult.names[0]?.name ?? analysis.category
         const taglineResult = await generateTagline({
@@ -188,8 +194,9 @@ export async function POST(request: NextRequest) {
         })
 
         // ── Step 5: description (streamObject — 토큰 단위 SSE) ──────────────
+        currentStep = 'description'
         emit({ type: 'progress', step: 'description', percent: 80 })
-        const descStream = streamDescription({
+        const descParams = {
           productName: primaryName,
           tagline: taglineResult.tagline,
           category: analysis.category,
@@ -197,21 +204,35 @@ export async function POST(request: NextRequest) {
           mode,
           targetAudience: analysis.targetAudience,
           userIntent,
-        })
-
-        let lastEmittedLen = 0
-        for await (const partial of descStream.partialObjectStream) {
-          const current = partial.description ?? ''
-          if (current.length > lastEmittedLen) {
-            const chunk = current.slice(lastEmittedLen)
-            lastEmittedLen = current.length
-            emit({ type: 'description_chunk', text: chunk })
-          }
         }
 
-        const finalDesc = await descStream.object
-        const description = finalDesc.description
-        const highlights = finalDesc.highlights ?? []
+        let description = ''
+        let highlights: string[] = []
+        try {
+          // v1.1 — 1차: streamObject 로 토큰 단위 SSE
+          const descStream = streamDescription(descParams)
+          let lastEmittedLen = 0
+          for await (const partial of descStream.partialObjectStream) {
+            const current = partial.description ?? ''
+            if (current.length > lastEmittedLen) {
+              const chunk = current.slice(lastEmittedLen)
+              lastEmittedLen = current.length
+              emit({ type: 'description_chunk', text: chunk })
+            }
+          }
+          const finalDesc = await descStream.object
+          description = finalDesc.description
+          highlights = finalDesc.highlights ?? []
+        } catch (streamErr) {
+          // v1.1 — 2차: streamObject 실패 시 비스트리밍 generateObject + fallback 체인
+          console.warn('[pipeline] streamDescription failed, retrying with generateDescription:', streamErr)
+          const result = await generateDescription(descParams)
+          description = result.description
+          highlights = result.highlights
+          // 클라이언트에 전체 텍스트 한 번에 전달
+          emit({ type: 'description_chunk', text: description })
+        }
+
         emit({ type: 'description_done', data: description, highlights })
 
         await supabase.from('generations').insert({
@@ -219,6 +240,8 @@ export async function POST(request: NextRequest) {
           type: 'description',
           payload: { description, charCount: description.length, highlights } as unknown as Record<string, unknown>,
         })
+
+        currentStep = undefined  // 모든 단계 성공 — outer catch 가 아니라 정상 완료
 
         // ── 프로젝트 완료 + 크레딧 차감 ───────────────────────────────────
         await supabase
@@ -241,15 +264,29 @@ export async function POST(request: NextRequest) {
         emit({ type: 'complete', elapsedMs: Date.now() - startTime })
         controller.close()
       } catch (err) {
-        console.error('[/api/generate/pipeline] stream error', err)
-        const message = err instanceof Error ? err.message : String(err)
-        let userMessage = message
+        console.error(`[/api/generate/pipeline] stream error at step=${currentStep}`, err)
+        // v1.1 — Supabase 등 비-Error 객체도 안전하게 직렬화
+        let message: string
+        if (err instanceof Error) {
+          message = err.message
+        } else if (err && typeof err === 'object') {
+          const e = err as { message?: string; code?: string; details?: string; hint?: string }
+          message = e.message ?? e.details ?? e.hint ?? JSON.stringify(err)
+          if (e.code) message = `[${e.code}] ${message}`
+        } else {
+          message = String(err)
+        }
+
+        // 사용자 친화 메시지 변환
+        let userMessage = `[${currentStep ?? 'unknown'}] ${message}`
         if (/credit|credit_balance|insufficient/i.test(message)) {
           userMessage = 'AI API 크레딧이 부족합니다. 잔액을 확인해주세요.'
         } else if (/401|unauthorized|invalid.*api.*key/i.test(message)) {
           userMessage = 'AI API 키가 유효하지 않습니다.'
+        } else if (/no object generated|could not parse/i.test(message)) {
+          userMessage = `${currentStep ?? 'AI'} 단계에서 응답을 해석할 수 없었습니다. 다시 시도해주세요. (1순위·2순위 모델 모두 실패: "${message.slice(0, 200)}")`
         }
-        emit({ type: 'error', message: userMessage })
+        emit({ type: 'error', message: userMessage, step: currentStep })
         controller.close()
       }
     },

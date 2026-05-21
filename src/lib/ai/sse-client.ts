@@ -35,12 +35,16 @@ export async function consumePipelineSSE(
         if (dataLines.length === 0) continue
 
         const json = dataLines.join('\n')
+        // JSON 파싱 실패는 로그만 — 다음 이벤트로 진행
+        let event: PipelineEvent
         try {
-          const event = JSON.parse(json) as PipelineEvent
-          onEvent(event)
+          event = JSON.parse(json) as PipelineEvent
         } catch (err) {
           console.warn('[sse-client] JSON parse 실패:', json.slice(0, 100), err)
+          continue
         }
+        // onEvent 의 throw 는 호출자(runPipeline)로 그대로 전파 — 에러를 삼키지 않음
+        onEvent(event)
       }
     }
   } finally {

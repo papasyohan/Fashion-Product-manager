@@ -160,7 +160,7 @@ export async function runWithFallback<T>(
   }
 }
 
-/** 어떤 에러가 fallback 트리거할지 — 잔액·rate-limit·일시적 네트워크 오류 */
+/** 어떤 에러가 fallback 트리거할지 — 잔액·rate-limit·일시적 네트워크 오류 + 스키마 파싱 실패 */
 function isRetriableError(err: unknown): boolean {
   const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase()
   const status = (err as { status?: number; statusCode?: number })?.status
@@ -170,5 +170,7 @@ function isRetriableError(err: unknown): boolean {
   if (/rate.?limit|too many requests|overloaded|capacity/i.test(message)) return true
   if (/credit.?balance|insufficient.*credit|quota/i.test(message)) return true
   if (/timeout|aborted|econnreset|fetch.?failed/i.test(message)) return true
+  // v1.1 — AI SDK 의 NoObjectGeneratedError (Gemini Flash 가 스키마 불일치 응답 반환 시) 도 fallback
+  if (/no object generated|could not parse|invalid.?json|response.?validation/i.test(message)) return true
   return false
 }
