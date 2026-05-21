@@ -91,7 +91,21 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       const emit = (event: PipelineEvent) => controller.enqueue(sseEvent(event))
       const fail = (step: PipelineStep | undefined, err: unknown, status = 500) => {
-        const message = err instanceof Error ? err.message : String(err)
+        // v1.1 — Supabase 에러 객체는 Error 인스턴스가 아닐 수 있으므로 안전하게 직렬화
+        let message: string
+        if (err instanceof Error) {
+          message = err.message
+        } else if (err && typeof err === 'object') {
+          const e = err as { message?: string; code?: string; hint?: string; details?: string }
+          message = e.message ?? e.details ?? e.hint ?? JSON.stringify(err)
+          if (e.code) message = `[${e.code}] ${message}`
+        } else {
+          message = String(err)
+        }
+        // 마이그레이션 미적용 힌트
+        if (/user_intent|column.*does not exist|schema cache/i.test(message)) {
+          message += ' — 마이그레이션 007/008 적용이 필요합니다. Supabase SQL Editor 에서 supabase/migrations/007_*.sql 과 008_*.sql 을 실행해주세요.'
+        }
         emit({ type: 'error', message, step, status })
       }
 
