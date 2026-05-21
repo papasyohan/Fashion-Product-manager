@@ -455,6 +455,56 @@ vercel env add LOCAL_LLM_API_KEY production
 
 ---
 
+## 12-B. Fashion Curation Style — 큐레이터 톤 표준 (v1.2)
+
+ProductCraft AI 는 패션·잡화·뷰티 카테고리에 최적화된 콘텐츠 생성 톤 표준을 별도 스킬로 분리·관리합니다.
+
+### 위치
+
+| 파일 | 역할 |
+|------|------|
+| `.claude/skills/fashion-curation-copy/SKILL.md` | Claude Code 에이전트용 스킬 정의 — 어휘·구조·금지어 가이드 |
+| `.claude/skills/fashion-curation-copy/references/` | tone-vocabulary.md, section-structure.md (확장 참고) |
+| `.claude/skills/fashion-curation-copy/examples/` | 학습 데이터 예시 (린넨 자켓, 와이드 치마바지) |
+| `src/lib/prompts/fashion-curation-style.ts` | **런타임 단일 진실** — naming/tagline/description 가 import |
+
+### 단일 진실 동기화 원칙
+
+스킬 파일과 런타임 코드는 항상 sync:
+1. `SKILL.md` (사람이 편집) 의 어휘·금지어·구조 변경
+2. `fashion-curation-style.ts` 의 해당 export 상수 함께 수정
+3. `npm run build` 통과 → 커밋·푸시 → Vercel 자동 배포
+4. 다음 생성부터 LLM 응답에 반영
+
+### 통합된 prompt builder
+
+| Prompt 파일 | 임베드된 스타일 |
+|------------|----------------|
+| `naming.ts` | `FASHION_CURATION_PREAMBLE` + `NAMING_PATTERNS` |
+| `tagline.ts` | `FASHION_CURATION_PREAMBLE` + `TAGLINE_PATTERNS` |
+| `description.ts` | `FASHION_CURATION_PREAMBLE` + `FOUR_SECTION_STRUCTURE` |
+| `detail-page-plan.ts` | `FASHION_CURATION_PREAMBLE` (Phase 3.2 LLM 섹션 자동 설계) |
+
+### 페르소나 요약
+
+> 패션 큐레이션·쇼포스트계 최고권위자, 패션 인플루언서 조력자.
+> 셀러 광고 톤이 아닌 매거진 에디터 큐레이션 톤으로 콘텐츠를 만든다.
+
+핵심:
+- 가격·할인이 아닌 **무드·실루엣·결감·소재 촉감** 묘사
+- 결과 묘사형 어미 ("~연출됩니다", "~완성됩니다") — 권유형 회피
+- 4섹션 구조 (핏 / 소재 / 디자인 / 코디추천) 엄격 준수
+- 줄바꿈 호흡 (15~25자 단위)
+
+### 추후 발전 워크플로우
+
+1. **사용자 / 큐레이터 패턴 학습**: 운영 중 좋은 결과·나쁜 결과를 모아 `.claude/skills/fashion-curation-copy/examples/` 에 추가
+2. **어휘집 보강**: `references/tone-vocabulary.md` 에 새 패턴 추가
+3. **금지어 갱신**: SKILL.md + fashion-curation-style.ts 동시 수정
+4. **결과 회귀 테스트**: 적용 전/후 생성 결과 비교 (Phase 1 의 user_edited 플래그 활용)
+
+---
+
 ## 12-A. 사용자 의도 / 보정 지시 주입 (v1.1 — UX Customization)
 
 상세 사양은 [`UX_CUSTOMIZATION.md`](./UX_CUSTOMIZATION.md) 참조.
@@ -517,6 +567,7 @@ intent-injector 는 순수 함수 (외부 API 호출 없음) → 기존 Edge Run
 
 | 날짜 | 변경 | 커밋 |
 |------|------|------|
+| 2026-05-21 | v1.2 fashion-curation-copy 스킬 도입 — 패션 큐레이터 톤·4섹션 구조 표준 통합 | (current) |
 | 2026-05-16 | v1.1 Phase 2 — Variants Tray + Lock + 썸네일 Pin · 4K 게이팅 + Trend 편집 + 노션 에디터 | (current) |
 | 2026-05-14 | v1.1 UX Customization Phase 1 — 의도 주입 + 분석 편집 + 인라인 편집 + 부분 재생성 | `01b8377` |
 | 2026-05-14 | Vercel AI SDK v6 도입 / Edge + SSE 스트리밍 / 멀티 프로바이더 라우터 | `5392ee2` |

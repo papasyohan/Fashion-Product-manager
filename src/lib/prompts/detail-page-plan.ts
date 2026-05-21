@@ -3,21 +3,26 @@
  *
  * LLM 이 분석 결과 + 텍스트 콘텐츠를 받아 셀러에게 최적화된 섹션 구조를 제안.
  * 출력 스키마: DetailPagePlanSchema (lib/ai/types.ts)
+ *
+ * v1.2: fashion-curation-style 통합 (큐레이터 톤 일관성)
  */
 
 import { appendIntentSection } from './intent-injector'
+import { FASHION_CURATION_PREAMBLE } from './fashion-curation-style'
 import type { UserIntent } from '@/lib/ai/types'
 
-export const DETAIL_PAGE_PLAN_SYSTEM_PROMPT = `당신은 한국 이커머스 전문 상세페이지 디자이너입니다.
-판매 전환율이 높은 상세페이지 구조를 설계합니다.
+export const DETAIL_PAGE_PLAN_SYSTEM_PROMPT = `${FASHION_CURATION_PREAMBLE}
+
+[당신의 작업 — 상세페이지 섹션 자동 설계]
+매거진 큐레이션이 된 상세페이지를 구조 설계합니다. 셀러 광고지가 아닌, 매거진 에디터의 화보 큐레이션이 되어야 합니다.
 
 핵심 원칙:
 - hero 섹션이 반드시 첫 번째 (상품명·카피·이미지)
-- 그 다음은 셀러 의도에 따라 features → description → keywords → reviews → cta 또는 변형
-- 카테고리에 어울리는 추가 text 섹션 1~2개 (예: "사용 시나리오", "구매 후 관리법")
-- 전체 섹션 개수: 4~7개 (너무 길지 않게)
-- 각 섹션의 텍스트는 한국 셀러 톤으로 자연스럽게
-- 금칙어 절대 금지: 치료, 완치, 세계 최고, 국내 유일
+- features → description → keywords → reviews → cta 또는 변형
+- 카테고리에 어울리는 추가 text 섹션 1~2개 (예: "스타일링 노트", "이런 분께", "관리 가이드")
+- 전체 섹션 개수: 4~7개
+- 각 섹션의 텍스트는 큐레이터 톤 ("~해줍니다 / ~연출됩니다") 유지
+- 금칙어 절대 금지
 
 JSON 스키마를 정확히 지켜 응답하세요.`
 

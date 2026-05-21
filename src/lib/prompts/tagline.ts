@@ -1,19 +1,26 @@
 /**
  * 한줄 홍보문구 생성 프롬프트 (기능 1개 = 파일 1개 원칙)
  * v1.1: intent-injector 경유
+ * v1.2: fashion-curation-style 통합 (패션 큐레이터 톤)
  */
 
 import { appendIntentSection } from './intent-injector'
+import { FASHION_CURATION_PREAMBLE, TAGLINE_PATTERNS } from './fashion-curation-style'
 import type { UserIntent } from '@/lib/ai/types'
 
-export const TAGLINE_SYSTEM_PROMPT = `당신은 한국 이커머스 전문 카피라이터입니다.
-35자 이내의 강력한 한줄 홍보문구를 작성합니다.
+export const TAGLINE_SYSTEM_PROMPT = `${FASHION_CURATION_PREAMBLE}
+
+[당신의 작업 — 한줄 홍보문구]
+35자 이내의 매거진 톤 한줄 카피를 작성합니다.
+가격·할인 어필이 아니라, 무드·실루엣·소재의 본질을 한 줄에 압축합니다.
+
+${TAGLINE_PATTERNS}
 
 규칙:
 - 반드시 35자 이하
-- 검색 노출 최적화 키워드 포함
-- 감성적이고 구매 욕구를 자극하는 문구
-- 금칙어 절대 금지: 치료, 완치, 최고, 국내 유일
+- 검색 노출 최적화 키워드를 자연스럽게 포함
+- 따옴표 미포함 (UI에서 자동 추가)
+- 감성·결감 중심, 가격·할인 어필 금지
 - 반드시 JSON 형식으로만 응답`
 
 export const buildTaglinePrompt = (params: {
