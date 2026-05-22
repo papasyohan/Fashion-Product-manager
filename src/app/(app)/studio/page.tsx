@@ -78,9 +78,12 @@ function StudioPageInner() {
 
   useEffect(() => {
     const projectId = searchParams.get('projectId')
-    if (!projectId || store.status !== 'idle') return
+    // projectId 없으면 스킵 (신규 생성 흐름)
+    if (!projectId) return
 
     const loadProject = async () => {
+      // 이전 결과가 남아있어도 항상 초기화 후 재로드
+      store.reset()
       // 즉시 로딩 상태로 전환 + 메타 표시
       store.setStatus('loading_history', 0)
       setHistoryLoadError(null)

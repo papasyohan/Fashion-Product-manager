@@ -5,10 +5,12 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { LogOut, ChevronDown, Zap, History, CreditCard, Shield } from 'lucide-react'
+import { useStudioStore } from '@/store/studio'
 
 export function AppNav() {
   const pathname = usePathname()
   const router = useRouter()
+  const resetStudio = useStudioStore((s) => s.reset)
   const [credits, setCredits] = useState<number | null>(null)
   const [plan, setPlan] = useState<string>('free')
   const [isAdmin, setIsAdmin] = useState(false)
@@ -63,8 +65,8 @@ export function AppNav() {
     >
       <div className="w-full max-w-[1440px] mx-auto px-6 md:px-12 flex items-center justify-between">
 
-        {/* 로고 */}
-        <Link href="/studio" className="flex items-center gap-2.5 flex-shrink-0">
+        {/* 로고 — 클릭 시 스튜디오 상태 초기화 후 메인으로 */}
+        <Link href="/studio" onClick={resetStudio} className="flex items-center gap-2.5 flex-shrink-0">
           <div className="w-7 h-7 rounded-full bg-[#111111] flex items-center justify-center">
             <span className="text-white text-[10px] font-black tracking-tight">PC</span>
           </div>
@@ -81,6 +83,7 @@ export function AppNav() {
               <Link
                 key={href}
                 href={href}
+                onClick={href === '/studio' ? resetStudio : undefined}
                 className="relative text-[14px] font-medium pb-1 transition-colors"
                 style={{ color: isActive ? '#111111' : '#707072' }}
               >
@@ -142,7 +145,10 @@ export function AppNav() {
                     <Link
                       key={href}
                       href={href}
-                      onClick={() => setMenuOpen(false)}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        if (href === '/studio') resetStudio()
+                      }}
                       className="flex items-center gap-2.5 px-4 py-3 text-[13px] font-medium text-[#111111] hover:bg-[#f5f5f5] transition-colors"
                     >
                       <Icon className="w-4 h-4 text-[#9e9ea0]" />
