@@ -1,5 +1,4 @@
-'use client'
-
+// Zustand store — 'use client' 불필요 (컴포넌트 파일 규약이며 store에는 해당 없음)
 import { create } from 'zustand'
 import type { UserIntent } from '@/lib/ai/types'
 

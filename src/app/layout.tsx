@@ -1,5 +1,37 @@
 import type { Metadata } from 'next'
+import { Bebas_Neue, Instrument_Serif } from 'next/font/google'
+import localFont from 'next/font/local'
 import './globals.css'
+
+// ─── 폰트 정의 (next/font — self-hosted, zero-CLS) ───────────────────────────
+// CDN <link> 태그 대비: 외부 커넥션 제거 + font-display:swap 자동 적용 + 캐시 최적화
+
+const bebasNeue = Bebas_Neue({
+  weight: '400',
+  subsets: ['latin'],
+  variable: '--font-display-latin',
+  display: 'swap',
+  preload: true,
+})
+
+const instrumentSerif = Instrument_Serif({
+  weight: '400',
+  style: ['normal', 'italic'],
+  subsets: ['latin'],
+  variable: '--font-instrument',
+  display: 'swap',
+  preload: false, // 랜딩 히어로에서만 사용 — 크리티컬 경로 제외
+})
+
+// Pretendard Variable — 한글 본문 폰트 (Google Fonts 미등록 → local self-host)
+const pretendard = localFont({
+  src: '../../public/fonts/PretendardVariable.woff2',
+  variable: '--font-pretendard',
+  weight: '100 900',
+  display: 'swap',
+  preload: true,
+  fallback: ['-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+})
 
 export const metadata: Metadata = {
   title: 'ProductCraft AI — 팔리는 상품 콘텐츠 자동 생성',
@@ -18,23 +50,10 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ko" className="h-full antialiased">
-      <head>
-        {/* Pretendard — 한글 본문 */}
-        <link rel="preconnect" href="https://cdn.jsdelivr.net" />
-        <link
-          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css"
-          rel="stylesheet"
-        />
-        {/* Bebas Neue — 영문 display 헤드라인 (App Router에서는 layout.tsx가 올바른 위치) */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Instrument+Serif:ital@0;1&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html
+      lang="ko"
+      className={`h-full antialiased ${pretendard.variable} ${bebasNeue.variable} ${instrumentSerif.variable}`}
+    >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   )

@@ -52,7 +52,12 @@ function StudioPageInner() {
     reason: 'insufficient_credits' | 'plan_required'
   }>({ open: false, result: null, reason: 'insufficient_credits' })
 
-  // ─── 프로필 크레딧 로드 ────────────────────────────────────────────────
+  // ─── Phase 4 — AI Fitting: last_model_image_url 상태 (선언을 useEffect 앞으로) ──
+  const [lastModelImageUrl, setLastModelImageUrl] = useState<string | null>(null)
+
+  // ─── 프로필 초기 로드 (credits + last_model_image_url 한 번에) ──────────
+  // getUser() 1회 + user_profiles select 1회 → 2개 데이터를 병렬 조회하지 않고
+  // 단일 쿼리로 처리해 Supabase 왕복을 최소화 (이전: 2개의 독립 useEffect).
   useEffect(() => {
     const load = async () => {
       const supabase = createClient()
@@ -60,10 +65,13 @@ function StudioPageInner() {
       if (!user) return
       const { data } = await supabase
         .from('user_profiles')
-        .select('credits_left')
+        .select('credits_left, last_model_image_url')
         .eq('id', user.id)
         .single()
-      if (data) setCreditsLeft(data.credits_left)
+      if (data) {
+        setCreditsLeft(data.credits_left)
+        if (data.last_model_image_url) setLastModelImageUrl(data.last_model_image_url)
+      }
     }
     load()
   }, [])
@@ -441,23 +449,6 @@ function StudioPageInner() {
   }, [handleRegenerateNaming, handleRegenerateTagline, handleRegenerateDescription])
 
   // ─── Phase 4 — AI Fitting 핸들러 ────────────────────────────────────────
-  // 마지막 모델 이미지 로드 (user_profiles.last_model_image_url 에서)
-  const [lastModelImageUrl, setLastModelImageUrl] = useState<string | null>(null)
-  useEffect(() => {
-    const loadLastModel = async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await supabase
-        .from('user_profiles')
-        .select('last_model_image_url')
-        .eq('id', user.id)
-        .single()
-      if (data?.last_model_image_url) setLastModelImageUrl(data.last_model_image_url)
-    }
-    loadLastModel()
-  }, [])
-
   const handleAIFitting = useCallback(async (aspectRatios: string[]) => {
     if (!store.projectId || !store.result) throw new Error('프로젝트가 없습니다.')
     if (!aspectRatios || aspectRatios.length === 0) throw new Error('비율을 선택해주세요.')
@@ -959,11 +950,28 @@ function StudioPageInner() {
   )
 }
 
+// ─── 스켈레톤 fallback — Suspense 대기 중 빈 화면 방지 (LCP 개선) ─────────
+function StudioSkeleton() {
+  return (
+    <div className="max-w-[480px] mx-auto px-6 pt-16 pb-8">
+      {/* 모드 선택 영역 */}
+      <div className="flex gap-2 mb-8">
+        <div className="flex-1 h-12 bg-[#e5e5e5] animate-pulse" />
+        <div className="flex-1 h-12 bg-[#e5e5e5] animate-pulse" />
+      </div>
+      {/* 업로드 영역 */}
+      <div className="h-48 bg-[#e5e5e5] animate-pulse mb-4" />
+      {/* 버튼 */}
+      <div className="h-12 bg-[#111111] opacity-20 animate-pulse" />
+    </div>
+  )
+}
+
 // ─── 기본 export — Suspense 래핑 (useSearchParams 요구사항) ──────────────
 
 export default function StudioPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<StudioSkeleton />}>
       <StudioPageInner />
     </Suspense>
   )

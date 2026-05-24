@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { Check, Copy, Share2, MessageSquare, FileCode2, Download, Loader2, ExternalLink, Lock, Unlock, RotateCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -9,9 +10,35 @@ import { ThumbnailGrid, type ThumbnailItem } from '@/components/thumbnail-grid'
 import { EditableText } from '@/components/editable-text'
 import { RegenerateMenu } from '@/components/regenerate-menu'
 import { VariantsTray } from '@/components/variants-tray'
-import { DetailPageEditor, buildDefaultSections } from '@/components/detail-page-editor'
-import { AIFittingPanel } from '@/components/ai-fitting-panel'
 import type { GenerationResult, DetailSection, SectionKind } from '@/store/studio'
+
+// buildDefaultSections은 순수 함수 → 동기 import (번들 크기 미미)
+import { buildDefaultSections } from '@/components/detail-page-editor'
+
+// ─── 무거운 컴포넌트 lazy load ────────────────────────────────────────────────
+// DetailPageEditor (~730줄) + AIFittingPanel (~430줄) 은 결과 화면 진입 후
+// 스크롤해야 나오는 하단 섹션 → dynamic import로 초기 번들에서 제외.
+// Quick 모드에서는 두 컴포넌트 모두 렌더링되지 않으므로 항상 코드 분할 이득.
+
+const DetailPageEditor = dynamic(
+  () => import('@/components/detail-page-editor').then((m) => ({ default: m.DetailPageEditor })),
+  {
+    loading: () => (
+      <div className="h-32 bg-[#f5f5f5] animate-pulse" style={{ borderRadius: 0 }} />
+    ),
+    ssr: false,
+  }
+)
+
+const AIFittingPanel = dynamic(
+  () => import('@/components/ai-fitting-panel').then((m) => ({ default: m.AIFittingPanel })),
+  {
+    loading: () => (
+      <div className="h-48 bg-[#f5f5f5] animate-pulse" style={{ borderRadius: 0 }} />
+    ),
+    ssr: false,
+  }
+)
 
 interface ResultCardProps {
   result: GenerationResult
