@@ -109,6 +109,7 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
     const status = searchParams.get('status')
     if (!status) return
     if (status === 'success') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBanner({
         kind: 'success',
         text: '결제 요청이 접수되었습니다. 웹훅 확인 후 플랜이 자동 업그레이드됩니다.',
@@ -147,6 +148,7 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
 
     setLoadingPlan(planId)
     try {
+      // eslint-disable-next-line react-hooks/purity
       const orderId = `plan-${planId}-${userId}-${Date.now()}`
       const origin = window.location.origin
       const tossPayments = window.TossPayments(clientKey)
@@ -180,6 +182,7 @@ export function BillingClient({ userId, currentPlan, creditsLeft, email, usageEv
     const loadingKey = `topup-${pack.id}`
     setLoadingPlan(loadingKey)
     try {
+      // eslint-disable-next-line react-hooks/purity
       const orderId = `topup-${pack.id}-${userId}-${Date.now()}`
       const origin = window.location.origin
       const tossPayments = window.TossPayments(clientKey)

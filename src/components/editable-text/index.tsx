@@ -45,6 +45,7 @@ export function EditableText({
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!editing) setDraft(value)
   }, [value, editing])
 

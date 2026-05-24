@@ -146,26 +146,12 @@ function StudioPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
-  // ─── 업로드 완료 핸들러 ────────────────────────────────────────────────
-  const handleUploadComplete = useCallback(
-    async (imageUrl: string, base64: string) => {
-      if (!store.mode) return
-      store.setImage(imageUrl, base64)
-      setErrorMsg(null)
-      await runPipeline(imageUrl, base64, store.mode)
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [store.mode]
-  )
-
   // ─── 파이프라인 실행 (SSE 스트리밍) ─────────────────────────────────────
   const runPipeline = async (imageUrl: string, base64: string, mode: StudioMode) => {
     store.setStatus('analyzing', STATUS_PROGRESS.analyzing)
 
     // SSE 누적 상태
     let projectId: string | null = null
-    let analysis: GenerationResult['features'] extends infer _ ? Record<string, unknown> | null : never
-    analysis = null
     let names: GenerationResult['names'] = []
     let tagline = ''
     let descriptionBuffer = ''
@@ -324,6 +310,18 @@ function StudioPageInner() {
     }
   }
 
+  // ─── 업로드 완료 핸들러 ────────────────────────────────────────────────
+  const handleUploadComplete = useCallback(
+    async (imageUrl: string, base64: string) => {
+      if (!store.mode) return
+      store.setImage(imageUrl, base64)
+      setErrorMsg(null)
+      await runPipeline(imageUrl, base64, store.mode)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [store.mode]
+  )
+
   // ─── v1.1: 인라인 편집 핸들러 ────────────────────────────────────────────
   const handleEditName = useCallback((index: number, newName: string) => {
     if (!store.result) return
@@ -472,16 +470,20 @@ function StudioPageInner() {
     const useUrl = store.modelImageUrl ?? (store.reuseLastModel ? lastModelImageUrl : null)
     if (!useBase64 && !useUrl) throw new Error('모델 사진을 먼저 업로드해주세요.')
 
-    const productImage = store.uploadedImageBase64 ?? store.uploadedImageUrl ?? null
-    if (!productImage) throw new Error('원본 제품 이미지가 없습니다.')
+    // 제품 이미지는 항상 Supabase Storage URL 사용 (이미 업로드 완료 상태).
+    // base64 를 그대로 전송하면 요청 바디가 최대 10MB+ 가 되어 전송 지연 + 타임아웃 유발.
+    // 서버에서 URL 을 한 번만 fetch 하는 것이 훨씬 효율적.
+    const productUrl = store.uploadedImageUrl ?? null
+    if (!productUrl) throw new Error('원본 제품 이미지가 없습니다.')
 
     const res = await fetch('/api/generate/ai-fitting', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectId: store.projectId,
-        productImageBase64: store.uploadedImageBase64 ?? undefined,
-        productImageUrl: !store.uploadedImageBase64 ? store.uploadedImageUrl : undefined,
+        // 제품 이미지: URL 전용 (base64 전송 금지 — 요청 크기 최소화)
+        productImageUrl: productUrl,
+        // 모델 이미지: 새 업로드 시 base64, 재사용 시 URL
         modelImageBase64: useBase64 ?? undefined,
         modelImageUrl: !useBase64 ? useUrl : undefined,
         aspectRatios,  // D안: 사용자가 선택한 비율만

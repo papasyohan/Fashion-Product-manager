@@ -452,7 +452,18 @@ function SectionBody({ section, onUpdate }: { section: DetailSection; onUpdate: 
             placeholder="상품명"
             showEditIcon={false}
           />
-          <div className="mt-1">
+          {section.image && (
+            <div className="mt-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={section.image}
+                alt={section.title}
+                className="w-full max-h-64 object-cover"
+                style={{ border: '1px solid #e5e5e5' }}
+              />
+            </div>
+          )}
+          <div className="mt-2">
             <EditableText
               value={section.tagline}
               onSave={(v) => onUpdate({ tagline: v } as Partial<DetailSection>)}
@@ -462,12 +473,6 @@ function SectionBody({ section, onUpdate }: { section: DetailSection; onUpdate: 
               showEditIcon={false}
             />
           </div>
-          {section.image && (
-            <div className="mt-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={section.image} alt={section.title} className="max-h-48 object-cover" />
-            </div>
-          )}
         </div>
       )
 

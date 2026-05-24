@@ -4,7 +4,6 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
-import type { UserProfile } from '@/types/supabase'
 
 type Operation = 'quick' | 'studio_text' | 'studio_thumbnail' | 'studio_fitting'
 type Resolution = '1K' | '2K' | '4K'

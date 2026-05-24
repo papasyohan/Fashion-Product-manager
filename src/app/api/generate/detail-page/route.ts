@@ -166,7 +166,7 @@ function assembleDetailPage(d: DetailPageInput): string {
   <h1 class="hero-title">${escapeHtml(d.productName)}</h1>
   <p class="hero-tagline">${escapeHtml(d.tagline)}</p>
   ${heroImgHTML}
-  ${d.shopUrl ? `<a href="${escapeHtml(d.shopUrl)}" class="cta-btn">지금 구매하기 →</a>` : ''}
+  ${d.shopUrl ? `<a href="${safeLinkHref(d.shopUrl)}" class="cta-btn">지금 구매하기 →</a>` : ''}
 </section>
 
 <!-- 02. 핵심 특징 -->
@@ -221,6 +221,15 @@ function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
+}
+
+/** href 속성에 안전한 URL인지 확인 — javascript: 스킴 차단 */
+function safeLinkHref(url: string | undefined): string {
+  if (!url) return '#'
+  // javascript: / vbscript: 스킴 차단 (대소문자, 공백 우회 포함)
+  const stripped = url.replace(/[ -]+/g, '').trim()
+  if (/^javascript:/i.test(stripped) || /^vbscript:/i.test(stripped)) return '#'
+  return escapeHtml(url)
 }
 
 // ─── v1.1 Phase 2 — Sections-based HTML 조립 ───────────────────────────────
@@ -302,7 +311,7 @@ function renderSection(s: DetailSection): string {
     case 'reviews':
       return `<section><div class="section-label">Customer Reviews</div><h2 class="section-title">고객 리뷰</h2><div class="review-placeholder"><p>${escapeHtml(s.placeholder)}</p></div></section>`
     case 'cta': {
-      const href = s.url ? escapeHtml(s.url) : '#'
+      const href = safeLinkHref(s.url)
       return `<section style="text-align:center"><a href="${href}" class="cta-btn">${escapeHtml(s.label)} →</a></section>`
     }
     case 'text': {

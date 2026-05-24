@@ -42,8 +42,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 고유 파일명 생성
-    const ext = file.name.split('.').pop() ?? 'jpg'
+    // 고유 파일명 생성 — file.name 에서 확장자 추출 금지(photo.png.exe 같은 이름 오염 방지)
+    // 검증된 file.type 에서 확장자를 유도함
+    const extMap: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
+    const ext = extMap[file.type] ?? 'jpg'
     const fileName = `${user.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`
 
     // Supabase Storage 업로드

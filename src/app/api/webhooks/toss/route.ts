@@ -7,6 +7,12 @@
  *  - CANCEL_PAYMENT → 플랜 다운그레이드
  *
  * Toss 서명 검증: HMAC-SHA256(secret, payload)
+ *
+ * 보안 수정 (BUG-02/03/04/11):
+ *  - TOSS_SECRET_KEY 미설정 시 서비스 불가 응답 (우회 방지)
+ *  - metadata.userId 우선 사용 (orderId 파싱보다 신뢰도 높음)
+ *  - 결제 처리 실패 시 500 반환 (Toss 재시도 유도)
+ *  - 전화번호·주문 정보 console.log 제거
  */
 
 import { NextResponse } from 'next/server'
@@ -39,11 +45,11 @@ const TOPUP_CREDITS: Record<string, number> = {
 }
 
 /**
- * orderId에서 userId(UUID) 추출
+ * orderId에서 userId(UUID) 추출 — fallback 전용.
+ * 결제 생성 시 metadata.userId 를 포함했다면 그쪽을 우선 사용해야 함.
  * 형식: {prefix1}-{prefix2}-{uuid(5 segments)}-{timestamp}
- * UUID는 하이픈 포함이므로 parts[2..6]을 재조합해야 함
  */
-function extractUserId(orderId: string, prefixCount = 2): string {
+function extractUserIdFromOrderId(orderId: string, prefixCount = 2): string {
   const parts = orderId.split('-')
   // UUID = 5 segments (8-4-4-4-12)
   return parts.slice(prefixCount, prefixCount + 5).join('-')
@@ -54,34 +60,51 @@ function extractUserId(orderId: string, prefixCount = 2): string {
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
 
-  // ─── 서명 검증 ──────────────────────────────────────────────────────────
+  // ─── 서명 검증 — secret 없으면 서비스 불가 (우회 차단) ──────────────────
   const tossSecret = process.env.TOSS_SECRET_KEY
-  if (tossSecret) {
-    const signature = request.headers.get('Toss-Payments-Signature')
-    const expected = createHmac('sha256', tossSecret)
-      .update(rawBody)
-      .digest('base64')
-
-    if (signature !== expected) {
-      console.warn('[Toss Webhook] Signature mismatch')
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-    }
+  if (!tossSecret) {
+    console.error('[Toss Webhook] TOSS_SECRET_KEY not configured — rejecting request')
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
-  const event = JSON.parse(rawBody)
-  console.log('[Toss Webhook] event:', event.eventType, event.data?.orderId)
+  const signature = request.headers.get('Toss-Payments-Signature')
+  const expected = createHmac('sha256', tossSecret)
+    .update(rawBody)
+    .digest('base64')
+
+  if (signature !== expected) {
+    console.warn('[Toss Webhook] Signature mismatch — possible forged request')
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let event: any
+  try {
+    event = JSON.parse(rawBody)
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  // 민감 정보 노출 없이 최소 로깅
+  console.log('[Toss Webhook] received:', event.eventType)
 
   const supabase = createSupabaseAdmin(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  if (event.eventType === 'PAYMENT_STATUS_CHANGED' && event.data?.status === 'DONE') {
-    await handlePaymentSuccess(supabase, event.data)
-  }
+  try {
+    if (event.eventType === 'PAYMENT_STATUS_CHANGED' && event.data?.status === 'DONE') {
+      await handlePaymentSuccess(supabase, event.data)
+    }
 
-  if (event.eventType === 'CANCEL_PAYMENT') {
-    await handlePaymentCancel(supabase, event.data)
+    if (event.eventType === 'CANCEL_PAYMENT') {
+      await handlePaymentCancel(supabase, event.data)
+    }
+  } catch (err) {
+    // 처리 실패 시 500 반환 → Toss가 재시도함 (결제 누락 방지)
+    console.error('[Toss Webhook] handler error:', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: 'Internal processing error' }, { status: 500 })
   }
 
   return NextResponse.json({ received: true })
@@ -110,18 +133,19 @@ async function handlePaymentSuccess(
   const parts = orderId.split('-')
   const planKey = `${parts[0]}-${parts[1]}` // 'plan-pro'
   const planName = ORDER_ID_PLAN_MAP[planKey]
-  // UUID는 parts[2..6] (5 segments)
-  const userId = extractUserId(orderId, 2) || data.metadata?.userId
+
+  // metadata.userId 우선 — orderId 파싱은 fallback (BUG-03 완화)
+  const userId = data.metadata?.userId || extractUserIdFromOrderId(orderId, 2)
 
   if (!planName || !userId) {
-    console.error('[Toss Webhook] Cannot parse plan orderId:', orderId)
-    return
+    console.error('[Toss Webhook] Cannot resolve plan or userId from orderId')
+    throw new Error('Cannot resolve plan or userId')
   }
 
   const credits = PLAN_CREDITS[planName] ?? 0
 
   // user_profiles 업데이트 (플랜 변경 + 크레딧 리셋)
-  await supabase
+  const { error: updateError } = await supabase
     .from('user_profiles')
     .update({
       plan: planName,
@@ -129,6 +153,8 @@ async function handlePaymentSuccess(
       updated_at: new Date().toISOString(),
     })
     .eq('id', userId)
+
+  if (updateError) throw new Error(`user_profiles update failed: ${updateError.message}`)
 
   // subscriptions 기록
   await supabase.from('subscriptions').upsert({
@@ -145,10 +171,10 @@ async function handlePaymentSuccess(
     user_id: userId,
     event_type: 'plan_upgraded',
     credits_used: -credits, // 음수 = 크레딧 증가
-    metadata: { plan: planName, orderId },
+    metadata: { plan: planName },
   })
 
-  console.log(`[Toss Webhook] Plan upgraded: userId=${userId} → ${planName} (+${credits} credits)`)
+  console.log(`[Toss Webhook] Plan upgraded → ${planName} (+${credits} credits)`)
 }
 
 // ─── 크레딧 충전 성공 ────────────────────────────────────────────────────────
@@ -162,31 +188,32 @@ async function handleTopupSuccess(
   // topup-{packId}-{uuid}-{timestamp}
   const parts = orderId.split('-')
   const packId = parts[1] // 'topup10' | 'topup30' | 'topup100'
-  const userId = extractUserId(orderId, 2) || fallbackUserId
+
+  // metadata.userId 우선
+  const userId = fallbackUserId || extractUserIdFromOrderId(orderId, 2)
 
   if (!packId || !userId) {
-    console.error('[Toss Webhook] Cannot parse topup orderId:', orderId)
-    return
+    throw new Error('Cannot parse topup orderId or userId')
   }
 
   const creditsToAdd = TOPUP_CREDITS[packId] ?? 0
   if (creditsToAdd === 0) {
-    console.error('[Toss Webhook] Unknown topup packId:', packId)
-    return
+    throw new Error(`Unknown topup packId: ${packId}`)
   }
 
   // credits_left 증가 (SQL: credits_left + creditsToAdd, GREATEST 적용)
-  await supabase.rpc('add_credits', { p_user_id: userId, p_amount: creditsToAdd })
+  const { error: rpcError } = await supabase.rpc('add_credits', { p_user_id: userId, p_amount: creditsToAdd })
+  if (rpcError) throw new Error(`add_credits RPC failed: ${rpcError.message}`)
 
   // usage_events 기록
   await supabase.from('usage_events').insert({
     user_id: userId,
     event_type: 'credit_purchased',
     credits_used: -creditsToAdd, // 음수 = 크레딧 증가
-    metadata: { packId, creditsAdded: creditsToAdd, orderId },
+    metadata: { packId, creditsAdded: creditsToAdd },
   })
 
-  console.log(`[Toss Webhook] Topup: userId=${userId} +${creditsToAdd} credits (${packId})`)
+  console.log(`[Toss Webhook] Topup +${creditsToAdd} credits (${packId})`)
 }
 
 // ─── 결제 취소 ──────────────────────────────────────────────────────────────
@@ -198,11 +225,12 @@ async function handlePaymentCancel(
 ) {
   // topup 취소는 크레딧을 다시 차감하지 않음 (단순 취소 알림만)
   if (data.orderId.startsWith('topup-')) {
-    console.log('[Toss Webhook] Topup cancelled (no action):', data.orderId)
+    console.log('[Toss Webhook] Topup cancelled (no action)')
     return
   }
-  const userId = extractUserId(data.orderId, 2) || data.metadata?.userId
-  if (!userId) return
+
+  const userId = data.metadata?.userId || extractUserIdFromOrderId(data.orderId, 2)
+  if (!userId) throw new Error('Cannot resolve userId for cancel')
 
   await supabase
     .from('user_profiles')
@@ -215,5 +243,5 @@ async function handlePaymentCancel(
     .eq('user_id', userId)
     .eq('status', 'active')
 
-  console.log(`[Toss Webhook] Plan cancelled: userId=${userId} → free`)
+  console.log('[Toss Webhook] Plan cancelled → free')
 }

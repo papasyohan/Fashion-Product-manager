@@ -23,10 +23,10 @@ describe('T-03: generateProductNames', () => {
 
     expect(result).toBeDefined()
     expect(result.names).toHaveLength(3)
-    result.names.forEach((name: string) => {
-      expect(typeof name).toBe('string')
-      expect(name.length).toBeGreaterThan(0)
-      expect(name.length).toBeLessThanOrEqual(40) // 쿠팡 기준 최대 40자
+    result.names.forEach((item) => {
+      expect(typeof item.name).toBe('string')
+      expect(item.name.length).toBeGreaterThan(0)
+      expect(item.name.length).toBeLessThanOrEqual(40) // 쿠팡 기준 최대 40자
     })
   })
 
@@ -63,8 +63,8 @@ describe('T-03: generateProductNames', () => {
       forbiddenTerms: ['치료', '완치'],
     })
 
-    result.names.forEach((name: string) => {
-      expect(name).not.toMatch(/치료|완치|의학적으로/)
+    result.names.forEach((item) => {
+      expect(item.name).not.toMatch(/치료|완치|의학적으로/)
     })
   })
 })

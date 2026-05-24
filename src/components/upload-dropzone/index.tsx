@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import { ImageIcon, Loader2, X, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -29,6 +29,17 @@ export function UploadDropzone({
   const [preview, setPreview] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
 
+  // Object URL 추적 — revoke 를 위해 ref 로 관리 (BUG-08 메모리 누수 방지)
+  const previewObjectUrlRef = useRef<string | null>(null)
+  const revokePreview = useCallback(() => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current)
+      previewObjectUrlRef.current = null
+    }
+  }, [])
+  // 컴포넌트 unmount 시 해제
+  useEffect(() => revokePreview, [revokePreview])
+
   const processFile = useCallback(
     async (file: File) => {
       if (!ACCEPTED_TYPES.includes(file.type)) {
@@ -45,7 +56,10 @@ export function UploadDropzone({
       setFileName(file.name)
 
       try {
+        // 이전 preview Object URL 해제 후 새로 생성
+        revokePreview()
         const previewUrl = URL.createObjectURL(file)
+        previewObjectUrlRef.current = previewUrl
         setPreview(previewUrl)
         setProgress(20)
 
@@ -81,7 +95,7 @@ export function UploadDropzone({
         setUploading(false)
       }
     },
-    [onUploadComplete, onError]
+    [onUploadComplete, onError, revokePreview]
   )
 
   const handleDrop = useCallback(
@@ -101,6 +115,7 @@ export function UploadDropzone({
   }
 
   const handleReset = () => {
+    revokePreview()
     setPreview(null)
     setFileName(null)
     setProgress(0)

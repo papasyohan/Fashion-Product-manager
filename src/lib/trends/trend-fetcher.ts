@@ -19,6 +19,9 @@ export interface TrendResult {
 }
 
 // 인메모리 캐시 (TTL: 1시간)
+// 주의: Edge Runtime (pipeline/route.ts) 에서는 요청마다 새 V8 isolate 가 생성되어
+// 이 캐시는 실질적으로 항상 miss 다. Node.js Serverless (warm lambda) 에서만 효과 있음.
+// 캐시 miss 시 네이버 DataLab 호출 또는 static fallback 으로 graceful degrade.
 const cache = new Map<string, { result: TrendResult; expiresAt: number }>()
 const CACHE_TTL_MS = 60 * 60 * 1000
 

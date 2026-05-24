@@ -8,6 +8,11 @@
  *  - thinking_level: minimal(기본) / high(Pro+)
  *  - 결과 이미지 → Supabase Storage 업로드 후 서명 URL 반환
  *  - SynthID 워터마크 자동 삽입 (Google 정책)
+ *
+ * v1.1 perf patch:
+ *  - URL→base64 변환을 generate() 에서 한 번만 수행 (3비율 3중 fetch 제거)
+ *  - 이미지 fetch에 20s 타임아웃 적용
+ *  - 개별 Gemini 호출에 65s 타임아웃 적용 (maxDuration=120 기준)
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai'
@@ -37,6 +42,28 @@ const RESOLUTION_SCALE: Record<string, number> = {
   '1K': 1.0,
   '2K': 2.0,
   '4K': 4.0,
+}
+
+// ─── URL → data URL 변환 헬퍼 ────────────────────────────────────────────────
+// Gemini 에 전달하기 전에 한 번만 실행 — generate() 에서 사전 해상(resolve)
+
+async function resolveImageToDataUrl(ref: string, timeoutMs = 20_000): Promise<string> {
+  if (ref.startsWith('data:')) return ref  // 이미 data URL
+  if (!ref.startsWith('http')) return ref  // 알 수 없는 형식 — 그대로 전달
+
+  // URL → fetch → base64 data URL
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const resp = await fetch(ref, { signal: controller.signal })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching image: ${ref}`)
+    const buf = await resp.arrayBuffer()
+    const base64 = Buffer.from(buf).toString('base64')
+    const mimeType = resp.headers.get('content-type')?.split(';')[0]?.trim() ?? 'image/jpeg'
+    return `data:${mimeType};base64,${base64}`
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // ─── Provider ───────────────────────────────────────────────────────────────
@@ -74,6 +101,18 @@ export class NanaBanana2Provider implements IImageGenProvider {
       model: 'gemini-3.1-flash-image-preview',
     })
 
+    // ── 참조 이미지 사전 해상 ── URL → data URL 변환을 한 번만 실행 ─────────
+    // 비율별 generateSingle 에서 각자 fetch 하던 비효율 제거:
+    // 3비율 × 2이미지 = 6회 fetch → 1회 사전 fetch 후 공유.
+    const resolvedRefs = await Promise.all(
+      referenceImages.slice(0, 5).map((ref) =>
+        resolveImageToDataUrl(ref).catch((err) => {
+          console.warn('[NanaBanana2] ref image resolve failed:', err)
+          return ref  // 실패 시 원본 전달 (generateSingle 에서 재시도)
+        })
+      )
+    )
+
     // 종횡비당 count만큼 생성 (병렬)
     const tasks = aspectRatios.flatMap((ratio) =>
       Array.from({ length: count }, () => ({ ratio }))
@@ -82,7 +121,9 @@ export class NanaBanana2Provider implements IImageGenProvider {
     const scale = RESOLUTION_SCALE[resolution] ?? 1.0
 
     const results = await Promise.allSettled(
-      tasks.map(({ ratio }) => this.generateSingle({ model, prompt, referenceImages, ratio, scale, thinking }))
+      tasks.map(({ ratio }) =>
+        this.generateSingle({ model, prompt, referenceImages: resolvedRefs, ratio, scale, thinking })
+      )
     )
 
     const images: ImageGenResult['images'] = []
@@ -119,27 +160,30 @@ export class NanaBanana2Provider implements IImageGenProvider {
     const height = Math.round(baseDims.height * scale)
 
     try {
-      // 참조 이미지 파트 구성
-      // Phase 4: multi-reference 지원 (slice(0,1) 제거)
+      // 참조 이미지 파트 구성 (이미 data URL 로 변환된 상태)
+      // Phase 4: multi-reference 지원
       // - 단일 이미지 (썸네일): [제품] 만 전달
       // - 멀티 이미지 (AI Fitting): [제품, 모델] 순서로 전달
-      // Nano Banana 2 는 최대 5장의 reference 까지 처리 가능.
       const parts: object[] = []
 
-      for (const ref of referenceImages.slice(0, 5)) {
+      for (const ref of referenceImages) {
         if (ref.startsWith('data:')) {
           const [header, data] = ref.split(',')
           const mimeType = header.split(':')[1]?.split(';')[0] ?? 'image/jpeg'
-          parts.push({
-            inlineData: { mimeType, data },
-          })
+          parts.push({ inlineData: { mimeType, data } })
         } else if (ref.startsWith('http')) {
-          // URL 형식: fetch하여 base64로 변환
-          const resp = await fetch(ref)
-          const buf = await resp.arrayBuffer()
-          const base64 = Buffer.from(buf).toString('base64')
-          const mimeType = resp.headers.get('content-type') ?? 'image/jpeg'
-          parts.push({ inlineData: { mimeType, data: base64 } })
+          // 사전 해상 실패 시 fallback — 15s 타임아웃 적용
+          const ctrl = new AbortController()
+          const t = setTimeout(() => ctrl.abort(), 15_000)
+          try {
+            const resp = await fetch(ref, { signal: ctrl.signal })
+            const buf = await resp.arrayBuffer()
+            const base64 = Buffer.from(buf).toString('base64')
+            const mimeType = resp.headers.get('content-type') ?? 'image/jpeg'
+            parts.push({ inlineData: { mimeType, data: base64 } })
+          } finally {
+            clearTimeout(t)
+          }
         }
       }
 
@@ -148,12 +192,19 @@ export class NanaBanana2Provider implements IImageGenProvider {
         text: `${prompt}\n\nGenerate image at ${width}x${height}px for ${ratio} aspect ratio. Preserve the exact product from the reference image — same shape, color, texture, and details.`,
       })
 
-      const response = await model.generateContent({
+      // ── Gemini 호출 (65s 타임아웃) ──────────────────────────────────────
+      // maxDuration=120s 기준 — 여유 55s를 DB 기록·Storage 업로드용으로 확보.
+      const timeoutMs = 65_000
+      const geminiCall = model.generateContent({
         contents: [{ role: 'user', parts }],
         generationConfig: {
           responseModalities: ['IMAGE', 'TEXT'],
         },
       })
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Gemini timeout after ${timeoutMs / 1000}s (${ratio})`)), timeoutMs)
+      )
+      const response = await Promise.race([geminiCall, timeoutPromise])
 
       const candidate = response.response.candidates?.[0]
       if (!candidate) return null

@@ -16,14 +16,17 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { checkCreditGuard, deductCredits, aiFittingCredits } from '@/lib/credit-guard'
+import { checkCreditGuard, aiFittingCredits } from '@/lib/credit-guard'
 import { buildAiFittingPrompt } from '@/lib/prompts/image/ai-fitting'
 import { NanaBanana2Provider } from '@/lib/ai/image/nano-banana2-provider'
 import { setImageProvider, getImageProvider } from '@/lib/ai/client'
 import type { AspectRatio, Resolution } from '@/lib/ai/image/types'
+import { getResolutionForPlan } from '@/lib/plan-settings'
+import type { Plan } from '@/lib/plan-settings'
 
 // Node Runtime — Storage 업로드 + Google SDK
-export const maxDuration = 90
+// 120s: 참조이미지 fetch(20s) + 3비율 병렬 Gemini(65s) + Storage업로드·DB기록(35s) 여유
+export const maxDuration = 120
 
 // ─── 스키마 ─────────────────────────────────────────────────────────────────
 
@@ -69,7 +72,7 @@ export async function POST(request: NextRequest) {
     const {
       projectId, productImageUrl, productImageBase64,
       modelImageUrl, modelImageBase64,
-      aspectRatios, resolution,
+      aspectRatios,
       category, productKeyFeatures,
       refinement, saveAsLastModel,
     } = parsed.data
@@ -79,6 +82,20 @@ export async function POST(request: NextRequest) {
     const modelImage = modelImageBase64 ?? modelImageUrl
     if (!productImage) return NextResponse.json({ error: '제품 이미지가 필요합니다.' }, { status: 400 })
     if (!modelImage)   return NextResponse.json({ error: '모델 이미지가 필요합니다.' }, { status: 400 })
+
+    // ── 서버 측 해상도 결정 (Admin 설정 기반) ─────────────────────────────
+    // 클라이언트 전송값 무시 — 서버에서 플랜별 해상도를 결정.
+    // AI Fitting 은 멀티-레퍼런스 이미지 합성 특성상 4K 는 생성 시간이 너무 길어
+    // 504 Timeout 이 발생하므로 최대 2K 로 제한.
+    const { data: profileForPlan } = await supabase
+      .from('user_profiles')
+      .select('plan')
+      .eq('id', user.id)
+      .single()
+    const userPlan = (profileForPlan?.plan ?? 'free') as Plan
+    const planResolution = await getResolutionForPlan(userPlan)
+    // 4K → 2K 다운그레이드 (AI Fitting 전용 상한선)
+    const resolution: Resolution = planResolution === '4K' ? '2K' : (planResolution as Resolution)
 
     // ── 크레딧 가드 (D안 동적 비용 + Pro 이상) ────────────────────────────
     // 1장=2 / 2장=4 / 3장=5 / 4장+=6 (aiFittingCredits 헬퍼)
@@ -164,45 +181,50 @@ export async function POST(request: NextRequest) {
       throw new Error('Nano Banana 2 가 결과 이미지를 반환하지 않았습니다.')
     }
 
-    // ── DB 기록 (ai_fittings) ─────────────────────────────────────────────
-    const inserts = genResult.images.map((img) => ({
-      project_id: projectId,
+    // ── DB 기록 + 크레딧 차감 (단일 원자 트랜잭션) ─────────────────────
+    // record_ai_fitting_generation RPC: ai_fittings INSERT + usage_events INSERT +
+    // user_profiles.credits_left UPDATE 를 한 번의 PostgreSQL 트랜잭션으로 처리.
+    // 어느 단계든 실패하면 전부 롤백 → 크레딧 이중차감/누락 방지 (BUG-01).
+    const elapsed = Date.now() - startTime
+
+    const fittingPayload = genResult.images.map((img) => ({
+      result_url:      img.url,
+      aspect_ratio:    img.aspectRatio,
+      width:           img.width,
+      height:          img.height,
       model_image_url: persistedModelUrl,
-      result_url: img.url,
-      aspect_ratio: img.aspectRatio,
-      width: img.width,
-      height: img.height,
       prompt,
     }))
 
-    const { data: saved } = await supabase
-      .from('ai_fittings')
-      .insert(inserts)
-      .select('id, result_url, aspect_ratio, width, height, model_image_url')
-
-    // ── usage_events + 크레딧 차감 (D안 동적 비용) ────────────────────────
-    await Promise.all([
-      supabase.from('usage_events').insert({
-        user_id: user.id,
-        project_id: projectId,
-        event_type: 'ai_fitting_generated',
-        credits_used: requiredCredits,
-        metadata: {
+    const { data: rpcResult, error: rpcError } = await supabase.rpc(
+      'record_ai_fitting_generation',
+      {
+        p_user_id:    user.id,
+        p_project_id: projectId,
+        p_fittings:   fittingPayload,
+        p_credits:    requiredCredits,
+        p_metadata:   {
           count: genResult.images.length,
           aspectRatios,
           resolution,
-          elapsedMs: Date.now() - startTime,
+          elapsedMs: elapsed,
           requestId: genResult.requestId,
         },
-      }),
-      deductCredits({ userId: user.id, operation: 'studio_fitting', amount: requiredCredits }),
-    ])
+      }
+    )
 
-    const elapsed = Date.now() - startTime
+    if (rpcError) {
+      console.error('[ai-fitting] record_ai_fitting_generation RPC failed:', rpcError)
+      throw new Error(`DB 기록 실패: ${rpcError.message}`)
+    }
+
+    // RPC 반환값에서 삽입된 레코드 추출
+    const saved = (rpcResult as { records: unknown[] } | null)?.records ?? fittingPayload
+
     console.log(`[ai-fitting] Generated ${genResult.images.length} fittings in ${elapsed}ms`)
 
     return NextResponse.json({
-      fittings: saved ?? inserts,
+      fittings: saved,
       modelImageUrl: persistedModelUrl,
       projectId,
       elapsedMs: elapsed,
@@ -212,9 +234,13 @@ export async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : '알 수 없는 오류'
     let userMessage = `AI Fitting 실패: ${message}`
     if (/credit_balance|credits.*low|insufficient/i.test(message)) {
-      userMessage = 'AI API 크레딧이 부족합니다. https://console.anthropic.com/settings/billing 또는 Google AI Studio 잔액을 확인해주세요.'
+      userMessage = 'AI API 크레딧이 부족합니다. Google AI Studio 잔액을 확인해주세요.'
     } else if (/quota|rate.?limit/i.test(message)) {
       userMessage = 'Google AI API 할당량을 초과했습니다. 잠시 후 다시 시도해주세요.'
+    } else if (/timeout/i.test(message)) {
+      userMessage = 'AI Fitting 생성 시간이 초과되었습니다. 잠시 후 다시 시도하거나, 비율을 줄여서 시도해보세요.'
+    } else if (/fetch.*image|resolve.*image|HTTP.*fetching/i.test(message)) {
+      userMessage = '제품/모델 이미지를 불러오지 못했습니다. 다시 업로드 후 시도해주세요.'
     }
     return NextResponse.json({ error: userMessage, debug: message }, { status: 500 })
   }

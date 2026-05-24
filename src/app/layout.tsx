@@ -26,9 +26,10 @@ export default function RootLayout({
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css"
           rel="stylesheet"
         />
-        {/* Bebas Neue — 영문 display 헤드라인 */}
+        {/* Bebas Neue — 영문 display 헤드라인 (App Router에서는 layout.tsx가 올바른 위치) */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Instrument+Serif:ital@0;1&display=swap"
           rel="stylesheet"

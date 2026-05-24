@@ -150,20 +150,20 @@ export async function POST(request: NextRequest) {
           payload: analysis as unknown as Record<string, unknown>,
         })
 
-        // ── Step 3: trends + naming (병렬) ─────────────────────────────────
+        // ── Step 3: trends → naming (순차 — 트렌드 키워드를 상품명 생성에 반영) ─
+        // 주의: 병렬 실행 시 naming 에 trendKeywords: [] 가 전달되어 트렌드 반영 불가.
+        // 트렌드 fetch 는 캐시 미스 시 ~500ms 이내이므로 순차 처리 허용.
         currentStep = 'naming'
         emit({ type: 'progress', step: 'naming', percent: 50 })
-        const [{ keywords: trendKeywords }, namingResult] = await Promise.all([
-          fetchTrendKeywords({ category: analysis.category }),
-          generateProductNames({
+        const { keywords: trendKeywords } = await fetchTrendKeywords({ category: analysis.category })
+        const namingResult = await generateProductNames({
             category: analysis.category,
             keywords: analysis.keywords,
-            trendKeywords: [],
+            trendKeywords,
             style: analysis.style,
             platform: analysis.platform,
             userIntent,
-          }),
-        ])
+          })
         emit({
           type: 'names',
           data: namingResult.names,

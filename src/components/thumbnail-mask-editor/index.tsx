@@ -61,26 +61,10 @@ export function ThumbnailMaskEditor({ imageUrl, aspectRatio, onClose, onApply }:
   const [refinement, setRefinement] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 렌더에서 canvasRef.current 를 직접 읽지 않도록 치수를 state 로 관리
+  const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null)
 
-  // 이미지 로드 + 캔버스 초기화
-  useEffect(() => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.src = imageUrl
-    img.onload = () => {
-      imgRef.current = img
-      drawCanvas()
-    }
-    img.onerror = () => setError('이미지 로드 실패')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageUrl])
-
-  // 박스 변경 시 다시 그리기
-  useEffect(() => {
-    drawCanvas()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [box])
-
+  // drawCanvas 를 effect 보다 먼저 선언 (const 는 호이스팅 안 됨)
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current
     const img = imgRef.current
@@ -96,6 +80,8 @@ export function ThumbnailMaskEditor({ imageUrl, aspectRatio, onClose, onApply }:
     canvas.height = targetH
     canvas.style.width = `${containerW}px`
     canvas.style.height = `${targetH}px`
+    // 치수 state 동기화 (렌더에서 ref 직접 접근 방지)
+    setCanvasSize({ width: containerW, height: Math.round(targetH) })
 
     // 이미지
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
@@ -125,6 +111,23 @@ export function ThumbnailMaskEditor({ imageUrl, aspectRatio, onClose, onApply }:
       ctx.strokeRect(box.x - 1, box.y - 1, box.width + 2, box.height + 2)
     }
   }, [box, aspectRatio])
+
+  // 이미지 로드 + 캔버스 초기화
+  useEffect(() => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.src = imageUrl
+    img.onload = () => {
+      imgRef.current = img
+      drawCanvas()
+    }
+    img.onerror = () => setError('이미지 로드 실패')
+  }, [imageUrl, drawCanvas])
+
+  // 박스 변경 시 다시 그리기
+  useEffect(() => {
+    drawCanvas()
+  }, [box, drawCanvas])
 
   const getCanvasPoint = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current
@@ -239,8 +242,8 @@ export function ThumbnailMaskEditor({ imageUrl, aspectRatio, onClose, onApply }:
           {box && box.width > 8 && box.height > 8 && (
             <div className="text-[11px] text-[#707072]">
               📍 선택 영역: <span className="font-bold text-[#111111]">
-                {canvasRef.current
-                  ? describeRegion(box, canvasRef.current.width, canvasRef.current.height)
+                {canvasSize
+                  ? describeRegion(box, canvasSize.width, canvasSize.height)
                   : '—'}
               </span>
               {' · '}

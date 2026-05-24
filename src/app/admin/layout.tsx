@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { requireAdmin } from '@/lib/auth/admin-guard'
-import { LayoutDashboard, Users, FileText, CreditCard, ArrowLeft } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, CreditCard, Settings, ArrowLeft } from 'lucide-react'
 
 export const metadata: Metadata = {
   title: 'Admin · ProductCraft AI',
@@ -40,6 +40,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <NavLink href="/admin/users"    icon={Users}           label="유저 관리" />
             <NavLink href="/admin/projects" icon={FileText}        label="생성 히스토리" />
             <NavLink href="/admin/billing"  icon={CreditCard}      label="결제 / 매출" />
+            <NavLink href="/admin/settings" icon={Settings}        label="설정" />
           </nav>
         </aside>
 

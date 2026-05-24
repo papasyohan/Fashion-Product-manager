@@ -75,9 +75,8 @@ async function sendSMS(params: {
   const fromNumber = process.env.COOLSMS_FROM_NUMBER
 
   if (!apiKey || !apiSecret || !fromNumber) {
-    // API 키 미설정 시 Mock 응답 (개발 환경)
-    console.log('[CoolSMS Mock] Would send SMS to:', params.phone)
-    console.log('[CoolSMS Mock] Message:', buildSMSText(params))
+    // API 키 미설정 시 Mock 응답 (개발/스테이징 환경) — 전화번호 로그 금지
+    console.log('[CoolSMS Mock] SMS skipped — keys not configured')
     return { messageId: `mock-${Date.now()}` }
   }
 

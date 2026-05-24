@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { Check, Copy, Share2, MessageSquare, FileCode2, Download, Loader2, ExternalLink, Lock, Unlock, RotateCw } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { Check, Copy, Share2, MessageSquare, FileCode2, Download, Loader2, ExternalLink, Lock, Unlock, RotateCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ShareSheet } from '@/components/share-sheet'
 import { ThumbnailGrid, type ThumbnailItem } from '@/components/thumbnail-grid'
@@ -109,6 +110,22 @@ export function ResultCard({
   const [detailPageHtml, setDetailPageHtml] = useState<string | null>(null)
   const [generatingDetail, setGeneratingDetail] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  // 간편모드 — AI Fitting 클릭 시 업그레이드 CTA 표시
+  const [showQuickCta, setShowQuickCta] = useState(false)
+
+  // AI Fitting 이미지 선택 → 상세페이지 hero 섹션 이미지 자동 동기화
+  // selectedFittingUrl 변경 시에만 실행. detailPageSections / onChangeDetailSections 를
+  // deps 에 포함하면 섹션 편집 → 상태 변경 → effect 재실행 → 무한루프 위험.
+  // ref.current 를 렌더 중 업데이트하는 패턴은 react-hooks/refs 위반이므로,
+  // exhaustive-deps disable 로 stale closure 를 명시적으로 허용.
+  useEffect(() => {
+    if (!selectedFittingUrl || !detailPageSections || !onChangeDetailSections) return
+    const updated = detailPageSections.map((s) =>
+      s.type === 'hero' ? ({ ...s, image: selectedFittingUrl } as DetailSection) : s
+    )
+    onChangeDetailSections(updated)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFittingUrl])
 
   const selectedName = result.names[result.selectedNameIndex]?.name ?? ''
 
@@ -215,10 +232,67 @@ export function ResultCard({
         )}
       </div>
 
-      {/* 01: 상품명 3종 */}
+      {/* 01: AI Fitting — Studio 실제 동작, Quick 모드는 CTA 안내 */}
+      <section className="mb-8">
+        <SectionHeader number="01" title="AI Fitting" subtitle="모델에게 입혀보기 · Pro 이상" />
+
+        {/* 간편모드 CTA 배너 */}
+        {mode === 'quick' && showQuickCta && (
+          <div
+            className="mb-4 p-4 flex items-start justify-between gap-4"
+            style={{ backgroundColor: '#fff9e6', border: '1px solid #f5c430' }}
+          >
+            <div>
+              <p className="text-[13px] font-bold text-[#111111] mb-1">
+                AI Fitting은 Pro 이상 플랜에서 사용 가능합니다
+              </p>
+              <p className="text-[12px] text-[#707072] mb-3">
+                모델에게 제품을 자연스럽게 입혀주는 AI Fitting 기능은 Pro · Business 플랜 전용입니다.
+              </p>
+              <Link
+                href="/billing"
+                className="inline-flex items-center gap-1 px-4 py-1.5 text-[12px] font-bold text-white bg-[#111111] hover:bg-[#333333] transition-colors"
+              >
+                플랜 업그레이드 →
+              </Link>
+            </div>
+            <button
+              onClick={() => setShowQuickCta(false)}
+              className="flex-shrink-0 text-[#9e9ea0] hover:text-[#111111] transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        <AIFittingPanel
+          productImageUrl={productImageUrl ?? null}
+          lastModelImageUrl={lastModelImageUrl ?? null}
+          currentModelBase64={currentModelBase64 ?? null}
+          currentModelUrl={currentModelUrl ?? null}
+          reuseLastModel={reuseLastModel ?? true}
+          onToggleReuseModel={onToggleReuseModel ?? (() => {})}
+          onModelUpload={
+            mode === 'quick'
+              ? () => setShowQuickCta(true)
+              : (onModelUpload ?? (() => {}))
+          }
+          onModelClear={onModelClear ?? (() => {})}
+          onGenerate={
+            mode === 'quick'
+              ? async () => { setShowQuickCta(true) }
+              : (onGenerateAIFitting ?? (async () => {}))
+          }
+          fittings={aiFittings ?? []}
+          selectedFittingUrl={selectedFittingUrl ?? null}
+          onSelectHero={onSelectFittingHero ?? (() => {})}
+        />
+      </section>
+
+      {/* 02: 상품명 3종 */}
       <section className="mb-8">
         <SectionHeader
-          number="01"
+          number="02"
           title="상품명 3종"
           subtitle="트렌드 반영"
           locked={locks?.naming}
@@ -291,10 +365,10 @@ export function ResultCard({
         </div>
       </section>
 
-      {/* 02: 한줄 홍보문구 */}
+      {/* 03: 한줄 홍보문구 */}
       <section className="mb-8">
         <SectionHeader
-          number="02"
+          number="03"
           title="한줄 홍보문구"
           subtitle="35자 이내"
           locked={locks?.tagline}
@@ -358,10 +432,10 @@ export function ResultCard({
         </div>
       </section>
 
-      {/* 03: 상세 설명 */}
+      {/* 04: 상세 설명 */}
       <section className="mb-8">
         <SectionHeader
-          number="03"
+          number="04"
           title="상세 설명"
           locked={locks?.description}
           onToggleLock={onToggleLock ? () => onToggleLock('description') : undefined}
@@ -414,28 +488,7 @@ export function ResultCard({
         </div>
       </section>
 
-      {/* 스튜디오 모드 전용: 04 AI Fitting (Phase 4) */}
-      {mode === 'studio' && onGenerateAIFitting && onModelUpload && onModelClear && onToggleReuseModel && onSelectFittingHero && (
-        <section className="mb-8">
-          <SectionHeader number="04" title="AI Fitting" subtitle="모델에게 입혀보기 · Pro 이상" />
-          <AIFittingPanel
-            productImageUrl={productImageUrl ?? null}
-            lastModelImageUrl={lastModelImageUrl ?? null}
-            currentModelBase64={currentModelBase64 ?? null}
-            currentModelUrl={currentModelUrl ?? null}
-            reuseLastModel={reuseLastModel ?? true}
-            onToggleReuseModel={onToggleReuseModel}
-            onModelUpload={onModelUpload}
-            onModelClear={onModelClear}
-            onGenerate={onGenerateAIFitting}
-            fittings={aiFittings ?? []}
-            selectedFittingUrl={selectedFittingUrl ?? null}
-            onSelectHero={onSelectFittingHero}
-          />
-        </section>
-      )}
-
-      {/* 스튜디오 모드 전용: 05 썸네일 (이전 04) */}
+      {/* 스튜디오 모드 전용: 05 썸네일 */}
       {mode === 'studio' && result.thumbnails && result.thumbnails.length > 0 && (
         <section className="mb-8">
           <SectionHeader number="05" title="썸네일" subtitle="Nano Banana 2 · Pin & Re-roll" />

@@ -7,6 +7,7 @@
 
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/server'
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
@@ -107,12 +108,12 @@ export default async function SharePage({ params }: SharePageProps) {
           <span className="text-sm font-sans font-semibold text-stone-900 tracking-tight">
             ProductCraft AI
           </span>
-          <a
+          <Link
             href="/"
             className="text-xs font-sans font-semibold text-white bg-stone-900 hover:bg-stone-700 transition-colors px-4 py-1.5 rounded-full"
           >
             나도 만들기
-          </a>
+          </Link>
         </div>
       </header>
 
@@ -211,12 +212,12 @@ export default async function SharePage({ params }: SharePageProps) {
           <p className="text-stone-400 font-sans text-sm mb-6">
             상품명 · 홍보문구 · 상세설명 · 썸네일까지 자동 생성
           </p>
-          <a
+          <Link
             href="/"
             className="inline-block font-sans font-semibold text-sm bg-white text-stone-900 hover:bg-stone-100 transition-colors px-7 py-3 rounded-full"
           >
             무료로 시작하기
-          </a>
+          </Link>
         </div>
       </main>
 

@@ -14,11 +14,13 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
+import { checkCreditGuard } from '@/lib/credit-guard'
 import { buildImagePrompt, buildPromptLayers } from '@/lib/ai/image/prompt-builder'
 import { NanaBanana2Provider } from '@/lib/ai/image/nano-banana2-provider'
 import { setImageProvider, getImageProvider } from '@/lib/ai/client'
 import type { AspectRatio, Resolution } from '@/lib/ai/image/types'
+import { getResolutionForPlan } from '@/lib/plan-settings'
+import type { Plan } from '@/lib/plan-settings'
 
 // ─── 스키마 ─────────────────────────────────────────────────────────────────
 
@@ -80,13 +82,23 @@ export async function POST(request: NextRequest) {
 
     const {
       projectId, imageUrl, imageBase64, analysis,
-      aspectRatios, pinnedAspectRatios, count, resolution,
+      aspectRatios, pinnedAspectRatios, count,
       overlayText, overlayBadge, refinement,
     } = parsed.data
 
     // v1.1 Phase 2 — 핀된 비율 제외 (남은 비율이 없으면 모든 비율 진행 — 안전 fallback)
     const targetRatios = aspectRatios.filter((r) => !pinnedAspectRatios.includes(r))
     const finalRatios = targetRatios.length > 0 ? targetRatios : aspectRatios
+
+    // ─── 서버 측 해상도 결정 (Admin 설정 기반) ───────────────────────────
+    // 클라이언트 전송값 무시 — 서버에서 플랜별 해상도를 결정
+    const { data: profileRow } = await supabase
+      .from('user_profiles')
+      .select('plan')
+      .eq('id', user.id)
+      .single()
+    const userPlan = (profileRow?.plan ?? 'free') as Plan
+    const resolution = await getResolutionForPlan(userPlan)
 
     // ─── 크레딧 가드 ──────────────────────────────────────────────────────
     const guard = await checkCreditGuard({
@@ -147,9 +159,13 @@ export async function POST(request: NextRequest) {
       resolution: resolution as Resolution,
     })
 
-    // ─── DB 기록 ─────────────────────────────────────────────────────────
-    const thumbnailInserts = genResult.images.map((img) => ({
-      project_id: projectId,
+    // ─── DB 기록 + 크레딧 차감 (단일 원자 트랜잭션) ─────────────────────
+    // record_thumbnail_generation RPC: thumbnails INSERT + usage_events INSERT +
+    // user_profiles.credits_left UPDATE 를 한 번의 PostgreSQL 트랜잭션으로 처리.
+    // 어느 단계든 실패하면 전부 롤백 → 크레딧 이중차감/누락 방지 (BUG-01).
+    const elapsed = Date.now() - startTime
+
+    const thumbnailPayload = genResult.images.map((img) => ({
       url: img.url,
       width: img.width,
       height: img.height,
@@ -158,34 +174,35 @@ export async function POST(request: NextRequest) {
       prompt,
     }))
 
-    const { data: savedThumbnails } = await supabase
-      .from('thumbnails')
-      .insert(thumbnailInserts)
-      .select('id, url, width, height, aspect_ratio')
+    const { data: rpcResult, error: rpcError } = await supabase.rpc(
+      'record_thumbnail_generation',
+      {
+        p_user_id:    user.id,
+        p_project_id: projectId,
+        p_thumbnails: thumbnailPayload,
+        p_credits:    3,
+        p_metadata:   {
+          count: genResult.images.length,
+          resolution,
+          aspectRatios,
+          elapsedMs: elapsed,
+          requestId: genResult.requestId,
+        },
+      }
+    )
 
-    // ─── usage_events 기록 ────────────────────────────────────────────────
-    await supabase.from('usage_events').insert({
-      user_id: user.id,
-      project_id: projectId,
-      event_type: 'thumbnail_generated',
-      credits_used: 3,
-      metadata: {
-        count: genResult.images.length,
-        resolution,
-        aspectRatios,
-        elapsedMs: Date.now() - startTime,
-        requestId: genResult.requestId,
-      },
-    })
+    if (rpcError) {
+      console.error('[thumbnail] record_thumbnail_generation RPC failed:', rpcError)
+      throw new Error(`DB 기록 실패: ${rpcError.message}`)
+    }
 
-    // ─── 크레딧 차감 ──────────────────────────────────────────────────────
-    await deductCredits({ userId: user.id, operation: 'studio_thumbnail' })
+    // RPC 반환값에서 삽입된 레코드 추출
+    const savedThumbnails = (rpcResult as { records: unknown[] } | null)?.records ?? thumbnailPayload
 
-    const elapsed = Date.now() - startTime
     console.log(`[thumbnail] Generated ${genResult.images.length} images in ${elapsed}ms`)
 
     return NextResponse.json({
-      thumbnails: savedThumbnails ?? thumbnailInserts,
+      thumbnails: savedThumbnails,
       prompt,
       layers,
       creditsAfter: guard.creditsAfter,
