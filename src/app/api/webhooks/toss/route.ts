@@ -144,6 +144,16 @@ async function handlePaymentSuccess(
 
   const credits = PLAN_CREDITS[planName] ?? 0
 
+  // SEC-07: userId가 실제 DB에 존재하는지 검증 (조작된 metadata 방어)
+  const { data: profileCheck } = await supabase
+    .from('user_profiles')
+    .select('id')
+    .eq('id', userId)
+    .single()
+  if (!profileCheck) {
+    throw new Error(`Invalid userId in payment metadata: ${userId}`)
+  }
+
   // user_profiles 업데이트 (플랜 변경 + 크레딧 리셋)
   const { error: updateError } = await supabase
     .from('user_profiles')

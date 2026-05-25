@@ -15,6 +15,7 @@ import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { checkCreditGuard } from '@/lib/credit-guard'
+import { isSafeImageUrl, MAX_BASE64_LENGTH } from '@/lib/security'
 import { buildImagePrompt, buildPromptLayers } from '@/lib/ai/image/prompt-builder'
 import { NanaBanana2Provider } from '@/lib/ai/image/nano-banana2-provider'
 import { setImageProvider, getImageProvider } from '@/lib/ai/client'
@@ -26,8 +27,8 @@ import type { Plan } from '@/lib/plan-settings'
 
 const ThumbnailSchema = z.object({
   projectId: z.string().uuid(),
-  imageUrl: z.string().url().optional(),
-  imageBase64: z.string().optional(),
+  imageUrl: z.string().url().refine(isSafeImageUrl, { message: '허용되지 않는 이미지 URL입니다.' }).optional(),
+  imageBase64: z.string().max(MAX_BASE64_LENGTH, { message: '이미지 크기가 초과되었습니다. (최대 20MB)' }).optional(),
   /** 분석 결과 — pipeline에서 받아옴 */
   analysis: z.object({
     category: z.string(),

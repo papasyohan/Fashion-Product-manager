@@ -14,7 +14,8 @@ import { createClient } from '@/lib/supabase/server'
 const ShareSchema = z.object({
   method: z.enum(['sms', 'kakao', 'link']),
   projectId: z.string().uuid(),
-  phone: z.string().optional(),
+  // SEC-12: PII 검증 — 한국 전화번호 형식만 허용 (임의 문자열로 외부 API 호출 방지)
+  phone: z.string().regex(/^(\+82|0)1[0-9]-?\d{3,4}-?\d{4}$/, { message: '올바른 전화번호 형식이 아닙니다.' }).optional(),
   productName: z.string(),
   tagline: z.string(),
   shareUrl: z.string().url(),

@@ -26,6 +26,7 @@ import { streamDescription, generateDescription } from '@/lib/ai/generators/desc
 import { fetchTrendKeywords } from '@/lib/trends/trend-fetcher'
 import { checkCreditGuard, deductCredits } from '@/lib/credit-guard'
 import { UserIntentSchema, type PipelineEvent, type PipelineStep } from '@/lib/ai/types'
+import { isSafeImageUrl, MAX_BASE64_LENGTH } from '@/lib/security'
 
 // ─── 런타임 설정 ────────────────────────────────────────────────────────────
 
@@ -35,8 +36,10 @@ export const dynamic = 'force-dynamic'
 // ─── 스키마 ─────────────────────────────────────────────────────────────────
 
 const PipelineSchema = z.object({
-  imageUrl: z.string().url().optional(),
-  imageBase64: z.string().optional(),
+  // SEC-02: isSafeImageUrl로 SSRF(내부망 요청) 방어
+  imageUrl: z.string().url().refine(isSafeImageUrl, { message: '허용되지 않는 이미지 URL입니다.' }).optional(),
+  // SEC-08: 20MB(base64 ≈ 26.7MB) 초과 본문으로 서버 메모리 고갈 방지
+  imageBase64: z.string().max(MAX_BASE64_LENGTH, { message: '이미지 크기가 초과되었습니다. (최대 20MB)' }).optional(),
   mode: z.enum(['quick', 'studio']).default('quick'),
   // v1.1 — 사용자 의도 (L1)
   userIntent: UserIntentSchema.optional(),
@@ -93,19 +96,26 @@ export async function POST(request: NextRequest) {
       let currentStep: PipelineStep | undefined = undefined
       const emit = (event: PipelineEvent) => controller.enqueue(sseEvent(event))
       const fail = (step: PipelineStep | undefined, err: unknown, status = 500) => {
-        // v1.1 — Supabase 에러 객체는 Error 인스턴스가 아닐 수 있으므로 안전하게 직렬화
+        // SEC-11: 프로덕션에서 DB 내부 코드(code/hint/details) 미노출
+        // 개발 환경에서는 전체 에러를 그대로 표시 (디버깅 편의)
+        const isDev = process.env.NODE_ENV === 'development'
         let message: string
         if (err instanceof Error) {
           message = err.message
         } else if (err && typeof err === 'object') {
           const e = err as { message?: string; code?: string; hint?: string; details?: string }
-          message = e.message ?? e.details ?? e.hint ?? JSON.stringify(err)
-          if (e.code) message = `[${e.code}] ${message}`
+          if (isDev) {
+            message = e.message ?? e.details ?? e.hint ?? JSON.stringify(err)
+            if (e.code) message = `[${e.code}] ${message}`
+          } else {
+            // 프로덕션: 사용자 메시지만, DB 코드/힌트 제외
+            message = e.message ?? '처리 중 오류가 발생했습니다.'
+          }
         } else {
-          message = String(err)
+          message = isDev ? String(err) : '처리 중 오류가 발생했습니다.'
         }
-        // 마이그레이션 미적용 힌트
-        if (/user_intent|column.*does not exist|schema cache/i.test(message)) {
+        // 마이그레이션 미적용 힌트 (개발 전용)
+        if (isDev && /user_intent|column.*does not exist|schema cache/i.test(message)) {
           message += ' — 마이그레이션 007/008 적용이 필요합니다. Supabase SQL Editor 에서 supabase/migrations/007_*.sql 과 008_*.sql 을 실행해주세요.'
         }
         emit({ type: 'error', message, step, status })

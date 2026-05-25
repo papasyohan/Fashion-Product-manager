@@ -145,7 +145,11 @@ export async function checkCreditGuard(
 
 /**
  * 크레딧 차감 (생성 성공 후 호출)
- * Phase 4: 동적 비용 amount override 지원
+ *
+ * SEC-03: deduct_credits_atomic RPC 사용 — credits_left >= amount 조건부 원자 UPDATE.
+ *   동시 요청(Race Condition)에서도 DB 레벨에서 한 번만 차감 보장.
+ *   false 반환(크레딧 부족) 시 에러를 throw하지 않고 경고만 기록
+ *   (생성은 이미 완료됐으므로 롤백 불가 — 크레딧 초과 소모 방지가 목적).
  */
 export async function deductCredits(params: {
   userId: string
@@ -159,8 +163,17 @@ export async function deductCredits(params: {
   const supabase = await createClient()
   const cost = params.amount ?? CREDIT_COSTS[params.operation]
 
-  await supabase.rpc('deduct_credits', {
+  const { data: success, error } = await supabase.rpc('deduct_credits_atomic', {
     p_user_id: params.userId,
     p_amount: cost,
   })
+
+  if (error) {
+    console.error('[deductCredits] RPC error:', error.message)
+    return
+  }
+  if (!success) {
+    // 이미 checkCreditGuard를 통과했지만 동시 요청으로 잔액 소진된 경우
+    console.warn(`[deductCredits] Insufficient credits for user ${params.userId} (race condition)`)
+  }
 }

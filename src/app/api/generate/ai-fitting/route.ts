@@ -23,6 +23,7 @@ import { setImageProvider, getImageProvider } from '@/lib/ai/client'
 import type { AspectRatio, Resolution } from '@/lib/ai/image/types'
 import { getResolutionForPlan } from '@/lib/plan-settings'
 import type { Plan } from '@/lib/plan-settings'
+import { isSafeImageUrl, MAX_BASE64_LENGTH, extractSafeMimeType } from '@/lib/security'
 
 // Node Runtime — Storage 업로드 + Google SDK
 // 120s: 참조이미지 fetch(20s) + 3비율 병렬 Gemini(65s) + Storage업로드·DB기록(35s) 여유
@@ -33,11 +34,13 @@ export const maxDuration = 120
 const FittingSchema = z.object({
   projectId: z.string().uuid(),
   /** 원본 제품 이미지 (이미 store 에 있음. URL 또는 base64) */
-  productImageUrl: z.string().url().optional(),
-  productImageBase64: z.string().optional(),
+  // SEC-02: SSRF 방어 — 내부망 URL 차단
+  productImageUrl: z.string().url().refine(isSafeImageUrl, { message: '허용되지 않는 이미지 URL입니다.' }).optional(),
+  // SEC-08: 20MB 초과 base64 차단
+  productImageBase64: z.string().max(MAX_BASE64_LENGTH, { message: '이미지 크기가 초과되었습니다. (최대 20MB)' }).optional(),
   /** 모델 이미지 — 처음 업로드: base64. 재사용: URL (last_model_image_url) */
-  modelImageUrl: z.string().url().optional(),
-  modelImageBase64: z.string().optional(),
+  modelImageUrl: z.string().url().refine(isSafeImageUrl, { message: '허용되지 않는 이미지 URL입니다.' }).optional(),
+  modelImageBase64: z.string().max(MAX_BASE64_LENGTH, { message: '이미지 크기가 초과되었습니다. (최대 20MB)' }).optional(),
   /** D-2: 3장 (1:1, 4:5, 9:16) 기본 */
   aspectRatios: z
     .array(z.enum(['1:1', '4:5', '9:16', '16:9', '4:3', '3:4']))
@@ -117,12 +120,19 @@ export async function POST(request: NextRequest) {
     // 이미 URL 인 경우 재사용이므로 다시 업로드 안 함.
     let persistedModelUrl: string | null = modelImageUrl ?? null
     if (modelImageBase64 && !modelImageUrl) {
+      // SEC-04: 사용자가 조작한 MIME 타입으로 SVG 등 XSS 벡터 업로드 차단
+      const safeMime = extractSafeMimeType(modelImageBase64)
+      if (!safeMime) {
+        return NextResponse.json(
+          { error: '허용되지 않는 이미지 형식입니다. JPEG, PNG, WebP만 업로드할 수 있습니다.' },
+          { status: 400 }
+        )
+      }
       try {
         const admin = await createAdminClient()
-        const matchType = modelImageBase64.match(/^data:(image\/[a-z]+);base64,/)
-        const mimeType = matchType?.[1] ?? 'image/jpeg'
+        const mimeType = safeMime
         const ext = mimeType.split('/')[1] ?? 'jpg'
-        const data = modelImageBase64.replace(/^data:image\/[a-z]+;base64,/, '')
+        const data = modelImageBase64.replace(/^data:image\/[a-z0-9+.-]+;base64,/, '')
         const buf = Buffer.from(data, 'base64')
         const path = `${user.id}/${Date.now()}.${ext}`
         const { error: uploadErr } = await admin.storage

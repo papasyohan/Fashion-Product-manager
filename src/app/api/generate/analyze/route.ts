@@ -4,14 +4,15 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { analyzeProductImage } from '@/lib/ai/analyzers/image-analyzer'
 import { UserIntentSchema } from '@/lib/ai/types'
+import { isSafeImageUrl, MAX_BASE64_LENGTH } from '@/lib/security'
 
 // Edge Runtime — 10초 timeout 회피
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 
 const AnalyzeSchema = z.object({
-  imageUrl: z.string().url().optional(),
-  imageBase64: z.string().optional(),
+  imageUrl: z.string().url().refine(isSafeImageUrl, { message: '허용되지 않는 이미지 URL입니다.' }).optional(),
+  imageBase64: z.string().max(MAX_BASE64_LENGTH, { message: '이미지 크기가 초과되었습니다. (최대 20MB)' }).optional(),
   projectId: z.string().uuid().optional(),
   mode: z.enum(['quick', 'studio']).default('quick'),
   // v1.1 — 의도 / 보정 / 변형 트리
