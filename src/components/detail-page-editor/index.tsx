@@ -458,7 +458,7 @@ function SectionBody({ section, onUpdate }: { section: DetailSection; onUpdate: 
               <img
                 src={section.image}
                 alt={section.title}
-                className="w-full max-h-64 object-cover"
+                className="w-full object-contain"
                 style={{ border: '1px solid #e5e5e5' }}
               />
             </div>
@@ -625,7 +625,7 @@ function SectionBody({ section, onUpdate }: { section: DetailSection; onUpdate: 
           {section.url && (
             <div className="mt-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={section.url} alt={section.caption ?? ''} className="max-h-48 object-cover" />
+              <img src={section.url} alt={section.caption ?? ''} className="w-full object-contain" />
             </div>
           )}
           <div className="mt-2">
