@@ -452,17 +452,6 @@ function SectionBody({ section, onUpdate }: { section: DetailSection; onUpdate: 
             placeholder="상품명"
             showEditIcon={false}
           />
-          {section.image && (
-            <div className="mt-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={section.image}
-                alt={section.title}
-                className="w-full object-contain"
-                style={{ border: '1px solid #e5e5e5' }}
-              />
-            </div>
-          )}
           <div className="mt-2">
             <EditableText
               value={section.tagline}
@@ -472,6 +461,25 @@ function SectionBody({ section, onUpdate }: { section: DetailSection; onUpdate: 
               placeholder="한줄 카피"
               showEditIcon={false}
             />
+          </div>
+          {/* 이미지 영역 — AI 피팅 이미지 또는 썸네일 */}
+          <div className="mt-4">
+            {section.image ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={section.image}
+                alt={section.title}
+                className="w-full object-contain"
+                style={{ border: '1px solid #e5e5e5' }}
+              />
+            ) : (
+              <div
+                className="flex items-center justify-center text-[12px] text-[#c5c5c7]"
+                style={{ height: '220px', backgroundColor: '#f8f8f8', border: '1px dashed #e0e0e0' }}
+              >
+                AI 피팅 이미지가 여기에 표시됩니다
+              </div>
+            )}
           </div>
         </div>
       )
