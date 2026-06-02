@@ -51,7 +51,7 @@ export const buildDescriptionPrompt = (params: {
     : ''
 
   const materialsSection = params.materials && params.materials.length > 0
-    ? `\n소재 정보: ${params.materials.join(', ')} (이 소재명을 소재 섹션에 반드시 반영)`
+    ? `\n소재 정보: ${params.materials.join(', ')} → 소재 섹션에 반영 (구성 비율은 이 정보가 있을 때만 포함)`
     : ''
 
   const base = `다음 제품의 상세 설명을 작성해주세요 (${targetLength}):
