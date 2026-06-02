@@ -59,6 +59,8 @@ export interface GenerationResult {
   category?: string
   keywords?: string[]
   features?: string[]
+  /** 포인트 키워드 3~5개 — 소재·핏·시즌·스타일 태그 (description 생성 결과) */
+  pointKeywords?: string[]
   /** 썸네일 중 대표 이미지 URL — 상세페이지 Hero에 삽입 */
   primaryThumbnailUrl?: string
 }

@@ -85,9 +85,12 @@ export const TaglineSchema = z.object({
 export type TaglineOutput = z.infer<typeof TaglineSchema>
 
 // v1.1 — highlights 옵셔널 (생성 못 해도 description 만으로 통과)
+// v1.3 — pointKeywords 추가 (소재·핏·시즌·스타일 2~5자 태그 3~5개)
 export const DescriptionSchema = z.object({
   description: z.string().describe('상세 설명 본문 (스펙은 · 기호로 구분)'),
-  highlights: z.array(z.string()).optional().describe('핵심 셀링포인트 3~5개'),
+  highlights: z.array(z.string()).optional().describe('핵심 셀링포인트 문장 3~5개'),
+  pointKeywords: z.array(z.string()).min(3).max(5).optional()
+    .describe('포인트 키워드 3~5개 — 소재·핏·시즌·스타일 카테고리의 2~5자 짧은 태그'),
 })
 export type DescriptionOutput = z.infer<typeof DescriptionSchema>
 
@@ -124,7 +127,7 @@ export type PipelineEvent =
   | { type: 'names'; data: NamingOutput['names']; trendTags: string[] }
   | { type: 'tagline'; data: string }
   | { type: 'description_chunk'; text: string }
-  | { type: 'description_done'; data: string; highlights: string[] }
+  | { type: 'description_done'; data: string; highlights: string[]; pointKeywords: string[] }
   | { type: 'complete'; elapsedMs: number }
   | { type: 'error'; message: string; step?: PipelineStep; status?: number }
 

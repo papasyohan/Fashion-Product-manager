@@ -19,6 +19,8 @@ export interface DescriptionResult {
   description: string
   charCount: number
   highlights: string[]
+  /** 포인트 키워드 3~5개 — 소재·핏·시즌·스타일 카테고리의 짧은 태그 */
+  pointKeywords: string[]
 }
 
 export type DescriptionParams = {
@@ -31,6 +33,8 @@ export type DescriptionParams = {
   specs?: Record<string, string | string[]>
   userIntent?: UserIntent
   refinement?: string
+  /** 소재 구성 정보 (이미지 분석에서 추출, 있을 때만) */
+  materials?: string[]
 }
 
 // ─── 비스트리밍 (개별 엔드포인트용) ──────────────────────────────────────────
@@ -52,6 +56,7 @@ export async function generateDescription(
     description: result.object.description,
     charCount: result.object.description.length,
     highlights: result.object.highlights ?? [],
+    pointKeywords: result.object.pointKeywords ?? [],
   }
 }
 

@@ -164,6 +164,7 @@ function StudioPageInner() {
     let tagline = ''
     let descriptionBuffer = ''
     let highlights: string[] = []
+    let pointKeywordsBuffer: string[] = []
     let analysisData: { category?: string; keywords?: string[]; keyFeatures?: string[]; targetAudience?: string } = {}
 
     try {
@@ -246,6 +247,7 @@ function StudioPageInner() {
           case 'description_done':
             descriptionBuffer = event.data
             highlights = event.highlights
+            pointKeywordsBuffer = event.pointKeywords ?? []
             store.addDescriptionVariant(event.data)
             return
           case 'error':
@@ -267,6 +269,7 @@ function StudioPageInner() {
         category: analysisData.category,
         keywords: analysisData.keywords,
         features: analysisData.keyFeatures,
+        pointKeywords: pointKeywordsBuffer.length > 0 ? pointKeywordsBuffer : undefined,
       }
       void highlights // 현재 미사용 (추후 상세페이지 조립 시 활용)
 

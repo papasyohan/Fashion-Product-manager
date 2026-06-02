@@ -213,11 +213,14 @@ export async function POST(request: NextRequest) {
           keywords: analysis.keywords,
           mode,
           targetAudience: analysis.targetAudience,
+          // 소재 정보 전달 — 소재 섹션 구체화에 활용
+          materials: analysis.materials?.length ? analysis.materials : undefined,
           userIntent,
         }
 
         let description = ''
         let highlights: string[] = []
+        let pointKeywords: string[] = []
         try {
           // v1.1 — 1차: streamObject 로 토큰 단위 SSE
           const descStream = streamDescription(descParams)
@@ -233,22 +236,24 @@ export async function POST(request: NextRequest) {
           const finalDesc = await descStream.object
           description = finalDesc.description
           highlights = finalDesc.highlights ?? []
+          pointKeywords = finalDesc.pointKeywords ?? []
         } catch (streamErr) {
           // v1.1 — 2차: streamObject 실패 시 비스트리밍 generateObject + fallback 체인
           console.warn('[pipeline] streamDescription failed, retrying with generateDescription:', streamErr)
           const result = await generateDescription(descParams)
           description = result.description
           highlights = result.highlights
+          pointKeywords = result.pointKeywords
           // 클라이언트에 전체 텍스트 한 번에 전달
           emit({ type: 'description_chunk', text: description })
         }
 
-        emit({ type: 'description_done', data: description, highlights })
+        emit({ type: 'description_done', data: description, highlights, pointKeywords })
 
         await supabase.from('generations').insert({
           project_id: projectId,
           type: 'description',
-          payload: { description, charCount: description.length, highlights } as unknown as Record<string, unknown>,
+          payload: { description, charCount: description.length, highlights, pointKeywords } as unknown as Record<string, unknown>,
         })
 
         currentStep = undefined  // 모든 단계 성공 — outer catch 가 아니라 정상 완료
