@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { Zap, Wand2, Clock, ImageOff, ChevronRight, Trash2, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -164,15 +165,16 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
                 />
                 {/* 썸네일 */}
                 <div
-                  className="w-16 h-16 overflow-hidden flex-shrink-0"
+                  className="w-16 h-16 relative overflow-hidden flex-shrink-0"
                   style={{ border: '1px solid #e5e5e5', backgroundColor: '#f5f5f5' }}
                 >
                   {project.product_image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <Image
                       src={project.product_image_url}
                       alt={productName}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="64px"
+                      className="object-cover"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">

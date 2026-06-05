@@ -8,6 +8,7 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createAdminClient } from '@/lib/supabase/server'
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
@@ -121,14 +122,14 @@ export default async function SharePage({ params }: SharePageProps) {
         {/* 썸네일 (있는 경우) */}
         {thumbnail && (
           <div className="mb-10 rounded-3xl overflow-hidden bg-stone-100 shadow-sm">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
               src={thumbnail.url}
               alt={primaryName}
               width={thumbnail.width || 800}
               height={thumbnail.height || 800}
               className="w-full object-cover"
               style={{ maxHeight: '420px', objectFit: 'cover' }}
+              priority
             />
           </div>
         )}
@@ -136,12 +137,14 @@ export default async function SharePage({ params }: SharePageProps) {
         {/* 상품 이미지 (썸네일 없고 원본 있는 경우) */}
         {!thumbnail && project.product_image_url && (
           <div className="mb-10 rounded-3xl overflow-hidden bg-stone-100 shadow-sm">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
               src={project.product_image_url}
               alt={primaryName}
+              width={800}
+              height={800}
               className="w-full object-cover"
               style={{ maxHeight: '420px', objectFit: 'cover' }}
+              priority
             />
           </div>
         )}

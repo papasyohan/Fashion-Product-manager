@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { Check, Download, Loader2, ImageOff, Pin, RotateCw, X, Crop } from 'lucide-react'
 import { ThumbnailMaskEditor } from '@/components/thumbnail-mask-editor'
 
@@ -100,12 +101,12 @@ export function ThumbnailGrid({
                     }}
                     onClick={() => onSelectPrimary?.(thumb)}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <Image
                       src={thumb.url}
                       alt={`${thumb.aspectRatio} 썸네일`}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
+                      fill
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                      className="object-cover"
                     />
 
                     {/* 선택 오버레이 */}

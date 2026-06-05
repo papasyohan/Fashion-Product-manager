@@ -3,6 +3,7 @@
  */
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { createAdminClient } from '@/lib/supabase/server'
 import { ExternalLink, Zap, Wand2 } from 'lucide-react'
 
@@ -84,8 +85,9 @@ export default async function AdminProjectsPage({
               <tr key={p.id} style={{ borderBottom: i < projects.length - 1 ? '1px solid #f5f5f5' : undefined }}>
                 <Td>
                   {p.product_image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.product_image_url} alt="" className="w-10 h-10 object-cover" style={{ border: '1px solid #e5e5e5' }} />
+                    <div className="w-10 h-10 relative overflow-hidden" style={{ border: '1px solid #e5e5e5' }}>
+                      <Image src={p.product_image_url} alt="" fill sizes="40px" className="object-cover" />
+                    </div>
                   ) : (
                     <div className="w-10 h-10" style={{ backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5' }} />
                   )}

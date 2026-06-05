@@ -28,12 +28,20 @@ const nextConfig: NextConfig = {
     },
   ],
 
-  // next/image 에서 Supabase Storage URL 허용
+  // next/image — Supabase Storage URL 허용 + AVIF/WebP 자동 변환
   images: {
+    formats: ['image/avif', 'image/webp'],
     remotePatterns: [
       { protocol: 'https', hostname: '*.supabase.co' },
       { protocol: 'https', hostname: '*.supabase.in' },
     ],
+    deviceSizes: [640, 828, 1080, 1200, 1920],
+    imageSizes: [40, 64, 128, 256, 512],
+  },
+
+  // Turbopack: 프로젝트 루트를 명시해 홈 디렉토리 package-lock.json 오인 방지
+  turbopack: {
+    root: __dirname,
   },
 };
 

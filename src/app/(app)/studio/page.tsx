@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useCallback, useEffect, Suspense } from 'react'
+import { useState, useCallback, useEffect, Suspense, memo } from 'react'
+import Image from 'next/image'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Sparkles, Loader2 } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
@@ -699,11 +700,12 @@ function StudioPageInner() {
               className="w-32 h-32 mx-auto overflow-hidden mb-6 relative"
               style={{ border: '1px solid #e5e5e5' }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <Image
                 src={historyProjectMeta.imageUrl}
                 alt="이전 작업 썸네일"
-                className="w-full h-full object-cover"
+                fill
+                sizes="128px"
+                className="object-cover"
               />
               <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
                 <Loader2 className="w-8 h-8 text-white animate-spin" />
@@ -765,31 +767,8 @@ function StudioPageInner() {
     )
   }
 
-  // ─── 생성 중 화면 ──────────────────────────────────────────────────────
-
-  if (isGenerating) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="text-center max-w-sm px-6">
-          <div className="w-16 h-16 mx-auto bg-[#111111] flex items-center justify-center mb-6">
-            <Loader2 className="w-8 h-8 text-white animate-spin" />
-          </div>
-          <h2 className="text-[22px] font-black text-[#111111] mb-2">
-            {selectStatusLabel(store.status)}
-          </h2>
-          <p className="text-[14px] text-[#707072] mb-6">
-            {store.status === 'generating_thumbnails'
-              ? '🍌 Nano Banana 2로 썸네일을 생성하고 있습니다...'
-              : store.mode === 'quick'
-              ? 'AI가 트렌드 키워드를 분석하고 있습니다...'
-              : 'AI 에이전트들이 협력하여 콘텐츠를 생성합니다...'}
-          </p>
-          <Progress value={store.progress} className="h-1.5 rounded-none" />
-          <p className="mt-3 text-[12px] text-[#9e9ea0]">{store.progress}%</p>
-        </div>
-      </div>
-    )
-  }
+  // ─── 생성 중 화면 — GeneratingView 컴포넌트로 위임 ─────────────────────
+  if (isGenerating) return <GeneratingView />
 
   // ─── 메인 선택 화면 ────────────────────────────────────────────────────
 
@@ -952,6 +931,36 @@ function StudioPageInner() {
     </div>
   )
 }
+
+// ─── 생성 중 진행률 화면 — 독립 셀렉터로 SSE 리렌더 범위 최소화 ─────────────
+// store 전체 구독 대신 status/progress/mode만 선택 → 나머지 상태 변경과 독립
+const GeneratingView = memo(function GeneratingView() {
+  const status   = useStudioStore(s => s.status)
+  const progress = useStudioStore(s => s.progress)
+  const mode     = useStudioStore(s => s.mode)
+
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="text-center max-w-sm px-6">
+        <div className="w-16 h-16 mx-auto bg-[#111111] flex items-center justify-center mb-6">
+          <Loader2 className="w-8 h-8 text-white animate-spin" />
+        </div>
+        <h2 className="text-[22px] font-black text-[#111111] mb-2">
+          {selectStatusLabel(status)}
+        </h2>
+        <p className="text-[14px] text-[#707072] mb-6">
+          {status === 'generating_thumbnails'
+            ? '🍌 Nano Banana 2로 썸네일을 생성하고 있습니다...'
+            : mode === 'quick'
+            ? 'AI가 트렌드 키워드를 분석하고 있습니다...'
+            : 'AI 에이전트들이 협력하여 콘텐츠를 생성합니다...'}
+        </p>
+        <Progress value={progress} className="h-1.5 rounded-none" />
+        <p className="mt-3 text-[12px] text-[#9e9ea0]">{progress}%</p>
+      </div>
+    </div>
+  )
+})
 
 // ─── 스켈레톤 fallback — Suspense 대기 중 빈 화면 방지 (LCP 개선) ─────────
 function StudioSkeleton() {
