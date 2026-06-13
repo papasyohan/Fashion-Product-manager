@@ -5,7 +5,8 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/server'
-import { TrendingUp, Users, Sparkles, CreditCard } from 'lucide-react'
+import { TrendingUp, Users, Sparkles, CreditCard, Activity } from 'lucide-react'
+import { getApiHealth } from '@/lib/api-balance'
 
 interface Stats {
   total_users: number
@@ -72,6 +73,9 @@ export default async function AdminDashboard() {
     loadRecentUsers(),
   ])
 
+  // API 헬스 — env 기반(동기, 네트워크 호출 없음). 실시간 잔액이 아니라 키 설정 상태.
+  const apiHealth = getApiHealth()
+
   return (
     <div className="p-6 md:p-8">
       <header className="mb-8">
@@ -118,6 +122,39 @@ export default async function AdminDashboard() {
           <PlanCell plan="Pro"      count={stats?.pro_users ?? 0}      borderRight  highlight />
           <PlanCell plan="Business" count={stats?.business_users ?? 0} />
         </div>
+      </section>
+
+      {/* API 상태 — AI 프로바이더 키 설정 헬스 (실시간 잔액 아님) */}
+      <section className="mb-10">
+        <SectionTitle>API 상태</SectionTitle>
+        <div className="grid grid-cols-1 md:grid-cols-3" style={{ border: '1px solid #e5e5e5' }}>
+          <ApiHealthCell label="Anthropic Claude" ok={apiHealth.anthropicKey} borderRight />
+          <ApiHealthCell label="Google Gemini" ok={apiHealth.googleKey} borderRight />
+          <div className="p-4 bg-white">
+            <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#9e9ea0] mb-1.5">
+              <Activity className="w-3 h-3" />
+              최근 장애 (인스턴스)
+            </div>
+            {apiHealth.lastIncident ? (
+              <div>
+                <div className="text-[13px] font-black text-[#d30005] uppercase tracking-wide">
+                  {apiHealth.lastIncident.status}
+                </div>
+                <div className="text-[11px] text-[#9e9ea0] mt-0.5">
+                  {apiHealth.lastIncident.provider}
+                  {apiHealth.lastIncident.task ? ` · ${apiHealth.lastIncident.task}` : ''}
+                  {' · '}
+                  {formatDate(apiHealth.lastIncident.at)}
+                </div>
+              </div>
+            ) : (
+              <div className="text-[13px] font-black text-[#007d48]">정상</div>
+            )}
+          </div>
+        </div>
+        <p className="text-[11px] text-[#9e9ea0] mt-2">
+          키 설정 여부와 이 인스턴스에서 최근 감지된 장애를 표시합니다. 실시간 잔액·할당량은 아닙니다.
+        </p>
       </section>
 
       {/* 2단: 최근 가입 / 최근 이벤트 */}
@@ -220,6 +257,23 @@ function PlanCell({ plan, count, borderRight, highlight }: { plan: string; count
     >
       <div className="text-[10px] font-black uppercase tracking-widest text-[#9e9ea0] mb-1.5">{plan}</div>
       <div className="text-[22px] font-black text-[#111111]">{count.toLocaleString()}</div>
+    </div>
+  )
+}
+
+function ApiHealthCell({ label, ok, borderRight }: { label: string; ok: boolean; borderRight?: boolean }) {
+  return (
+    <div className="p-4 bg-white" style={{ borderRight: borderRight ? '1px solid #e5e5e5' : undefined }}>
+      <div className="text-[10px] font-black uppercase tracking-widest text-[#9e9ea0] mb-1.5">{label}</div>
+      <div className="flex items-center gap-2">
+        <span
+          className="inline-block w-2.5 h-2.5 rounded-full"
+          style={{ backgroundColor: ok ? '#007d48' : '#d30005' }}
+        />
+        <span className="text-[13px] font-black" style={{ color: ok ? '#007d48' : '#d30005' }}>
+          {ok ? '키 설정됨' : '키 없음'}
+        </span>
+      </div>
     </div>
   )
 }
