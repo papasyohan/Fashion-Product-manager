@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Zap, Wand2, Clock, ImageOff, ChevronRight, Trash2, Loader2 } from 'lucide-react'
+import { Zap, Wand2, Clock, ImageOff, ChevronRight, Trash2, Loader2, Shirt, ExternalLink } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import type { FittingHistoryItem } from '@/lib/history-items'
 
 interface Generation {
   type: string
@@ -24,16 +25,44 @@ interface Project {
 
 interface Props {
   projects: Project[]
+  fittings?: FittingHistoryItem[]
   plan?: string
   retentionDays?: number | null
 }
 
-export function HistoryClient({ projects: initialProjects, plan = 'free', retentionDays = 7 }: Props) {
-  const [filter, setFilter] = useState<'all' | 'quick' | 'studio'>('all')
+/** '전체' 뷰에서 projects + fittings 를 created_at 기준으로 병합하기 위한 판별 유니온 */
+type MergedItem =
+  | { kind: 'project'; createdAt: string; project: Project }
+  | { kind: 'fitting'; createdAt: string; fitting: FittingHistoryItem }
+
+export function HistoryClient({ projects: initialProjects, fittings = [], plan = 'free', retentionDays = 7 }: Props) {
+  const [filter, setFilter] = useState<'all' | 'quick' | 'studio' | 'fitting'>('all')
   const [projects, setProjects] = useState<Project[]>(initialProjects)
   const [deleteState, setDeleteState] = useState<Record<string, 'confirm' | 'deleting'>>({})
 
-  const filtered = filter === 'all' ? projects : projects.filter((p) => p.mode === filter)
+  // '전체' 뷰: projects + fittings 를 created_at desc 로 병합.
+  // 'quick' | 'studio': 해당 모드의 프로젝트만. 'fitting': AI 피팅 결과만.
+  const mergedItems = useMemo<MergedItem[]>(() => {
+    if (filter === 'fitting') {
+      return fittings.map((f) => ({ kind: 'fitting' as const, createdAt: f.createdAt, fitting: f }))
+    }
+
+    const projectItems: MergedItem[] = (
+      filter === 'all' ? projects : projects.filter((p) => p.mode === filter)
+    ).map((p) => ({ kind: 'project' as const, createdAt: p.created_at, project: p }))
+
+    if (filter !== 'all') return projectItems
+
+    const fittingItems: MergedItem[] = fittings.map((f) => ({
+      kind: 'fitting' as const,
+      createdAt: f.createdAt,
+      fitting: f,
+    }))
+
+    return [...projectItems, ...fittingItems].sort((a, b) =>
+      a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0
+    )
+  }, [filter, projects, fittings])
 
   const handleDeleteClick = (projectId: string) => {
     setDeleteState((prev) => ({ ...prev, [projectId]: 'confirm' }))
@@ -109,7 +138,7 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
 
       {/* 필터 탭 */}
       <div className="flex items-center gap-2 mb-6">
-        {(['all', 'quick', 'studio'] as const).map((f) => (
+        {(['all', 'quick', 'studio', 'fitting'] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -119,16 +148,22 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
               color: filter === f ? '#ffffff' : '#707072',
             }}
           >
-            {f === 'all' ? '전체' : f === 'quick' ? '간편 모드' : '스튜디오 모드'}
+            {f === 'all'
+              ? '전체'
+              : f === 'quick'
+              ? '간편 모드'
+              : f === 'studio'
+              ? '스튜디오 모드'
+              : 'AI 피팅'}
           </button>
         ))}
         <span className="ml-auto text-[12px] text-[#9e9ea0]">
-          {filtered.length}건
+          {mergedItems.length}건
         </span>
       </div>
 
       {/* 목록 */}
-      {filtered.length === 0 ? (
+      {mergedItems.length === 0 ? (
         <div className="text-center py-20">
           <div
             className="w-16 h-16 mx-auto flex items-center justify-center mb-4"
@@ -136,7 +171,9 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
           >
             <Clock className="w-8 h-8 text-[#9e9ea0]" />
           </div>
-          <p className="text-[13px] text-[#9e9ea0]">생성 내역이 없습니다.</p>
+          <p className="text-[13px] text-[#9e9ea0]">
+            {filter === 'fitting' ? 'AI 피팅 내역이 없습니다.' : '생성 내역이 없습니다.'}
+          </p>
           <Link
             href="/studio"
             className="mt-4 inline-block text-[13px] font-bold text-[#111111] hover:underline"
@@ -146,7 +183,91 @@ export function HistoryClient({ projects: initialProjects, plan = 'free', retent
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((project) => {
+          {mergedItems.map((item) => {
+            // ─── AI 피팅 결과 카드 — 결과 이미지 자체가 산출물 ───────────────
+            // 스튜디오의 loadProject 는 텍스트 생성물만 복원하고 피팅 이미지는
+            // 표시하지 않으므로, /studio 로 딥링크하지 않고 result_url 을 새 탭으로 연다.
+            // (삭제 UI 는 projects.delete 기반이라 피팅 카드에는 노출하지 않음 — 읽기 전용)
+            if (item.kind === 'fitting') {
+              const fitting = item.fitting
+              return (
+                <a
+                  key={`fitting-${fitting.id}`}
+                  href={fitting.resultUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex items-center gap-4 p-5 hover:bg-[#f5f5f5] transition-all cursor-pointer relative"
+                  style={{ border: '1px solid #e5e5e5', backgroundColor: '#ffffff' }}
+                >
+                  {/* hover 시 좌측 검정 인디케이터 */}
+                  <span
+                    className="absolute left-0 top-0 bottom-0 w-1 bg-[#111111] opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-hidden
+                  />
+                  {/* 썸네일 — 피팅 결과 이미지 */}
+                  <div
+                    className="w-16 h-16 relative overflow-hidden flex-shrink-0"
+                    style={{ border: '1px solid #e5e5e5', backgroundColor: '#f5f5f5' }}
+                  >
+                    {fitting.resultUrl ? (
+                      <Image
+                        src={fitting.resultUrl}
+                        alt="AI 피팅 결과"
+                        fill
+                        sizes="64px"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <ImageOff className="w-5 h-5 text-[#9e9ea0]" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 내용 */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      {/* AI 피팅 태그 */}
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest"
+                        style={{ backgroundColor: '#111111', color: '#ffffff' }}
+                      >
+                        <Shirt className="w-3 h-3" />
+                        AI 피팅
+                      </span>
+                      {fitting.aspectRatio && (
+                        <span
+                          className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                          style={{ backgroundColor: '#f5f5f5', color: '#707072' }}
+                        >
+                          {fitting.aspectRatio}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[15px] font-bold text-[#111111] truncate">
+                      AI 피팅 결과
+                    </p>
+                    <p className="text-[11px] text-[#9e9ea0] mt-1">
+                      {formatDate(fitting.createdAt)}
+                    </p>
+                  </div>
+
+                  {/* 액션 — 새 탭에서 보기 */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-semibold text-[#111111] transition-colors opacity-100 md:opacity-0 group-hover:opacity-100"
+                      style={{ backgroundColor: '#f5f5f5', border: '1px solid #cacacb' }}
+                    >
+                      원본 보기
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                </a>
+              )
+            }
+
+            // ─── 일반 생성물(프로젝트) 카드 — 기존 동작 그대로 ────────────────
+            const project = item.project
             const productName = getProductName(project)
             const tagline = getTagline(project)
             const ModeIcon = project.mode === 'quick' ? Zap : Wand2

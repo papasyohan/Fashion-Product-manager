@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { HistoryClient } from './history-client'
+import { mapFittingRows } from '@/lib/history-items'
 
 export const metadata = {
   title: 'ProductCraft AI — 히스토리',
@@ -54,9 +55,43 @@ export default async function HistoryPage() {
     .order('created_at', { ascending: false })
     .limit(50)
 
-  const { data: projects } = await (
-    cutoffIso ? baseQuery.gte('created_at', cutoffIso) : baseQuery
-  )
+  // AI 피팅 결과(ai_fittings)를 동일한 날짜 윈도우 + limit 로 병렬 조회.
+  // ai_fittings 에는 user_id 컬럼이 없어 RLS(project_id -> projects.user_id)로
+  // 본인 데이터만 조회된다. 반드시 인증된 createClient 사용 (admin 사용 시 타 사용자 유출).
+  // 부모 프로젝트의 mode / product_image_url 을 to-one embed 로 함께 가져옴.
+  const fittingsBaseQuery = supabase
+    .from('ai_fittings')
+    .select(`
+      id,
+      project_id,
+      result_url,
+      model_image_url,
+      aspect_ratio,
+      width,
+      height,
+      created_at,
+      projects (
+        mode,
+        product_image_url
+      )
+    `)
+    .order('created_at', { ascending: false })
+    .limit(50)
 
-  return <HistoryClient projects={projects ?? []} plan={plan} retentionDays={retentionDays} />
+  // 프로젝트 + 피팅을 병렬 실행해 추가 지연을 만들지 않음.
+  const [{ data: projects }, { data: fittingRows }] = await Promise.all([
+    cutoffIso ? baseQuery.gte('created_at', cutoffIso) : baseQuery,
+    cutoffIso ? fittingsBaseQuery.gte('created_at', cutoffIso) : fittingsBaseQuery,
+  ])
+
+  const fittings = mapFittingRows(fittingRows)
+
+  return (
+    <HistoryClient
+      projects={projects ?? []}
+      fittings={fittings}
+      plan={plan}
+      retentionDays={retentionDays}
+    />
+  )
 }
