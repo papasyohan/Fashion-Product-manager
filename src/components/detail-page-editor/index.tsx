@@ -16,6 +16,7 @@
 import { useState, useCallback } from 'react'
 import { Plus, GripVertical, MoreHorizontal, Trash2, Download, Save, ExternalLink, X, Loader2, Sparkles } from 'lucide-react'
 import { EditableText } from '@/components/editable-text'
+import { PointKeywords } from '@/components/point-keywords'
 import type { DetailSection, DetailSectionType } from '@/store/studio'
 
 interface DetailPageEditorProps {
@@ -30,6 +31,8 @@ interface DetailPageEditorProps {
     description: string
     keywords: string[]
     features: string[]
+    /** 포인트 키워드 — hero 본문 chip 표시용 (소재·핏·시즌·스타일). 비면 chip 미표시 */
+    pointKeywords?: string[]
     thumbnailUrl?: string
   }
 }
@@ -231,6 +234,7 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
             <SectionWrapper
               section={section}
               index={index}
+              pointKeywords={defaults?.pointKeywords}
               isDragging={dragIndex === index}
               isDragTarget={hoverIndex === index && dragIndex !== null}
               onDragStart={() => setDragIndex(index)}
@@ -360,6 +364,8 @@ export function DetailPageEditor({ sections, onChange, projectId, defaults }: De
 interface SectionWrapperProps {
   section: DetailSection
   index: number
+  /** hero 본문에 표시할 포인트 키워드 (display-only) */
+  pointKeywords?: string[]
   isDragging: boolean
   isDragTarget: boolean
   onDragStart: () => void
@@ -432,14 +438,23 @@ function SectionWrapper(p: SectionWrapperProps) {
       </div>
 
       {/* 본문 — 타입별 렌더링 */}
-      <SectionBody section={p.section} onUpdate={p.onUpdate} />
+      <SectionBody section={p.section} onUpdate={p.onUpdate} pointKeywords={p.pointKeywords} />
     </div>
   )
 }
 
 // ─── 섹션 본문 (타입별) ────────────────────────────────────────────────────
 
-function SectionBody({ section, onUpdate }: { section: DetailSection; onUpdate: (patch: Partial<DetailSection>) => void }) {
+function SectionBody({
+  section,
+  onUpdate,
+  pointKeywords,
+}: {
+  section: DetailSection
+  onUpdate: (patch: Partial<DetailSection>) => void
+  /** hero 본문에 표시할 포인트 키워드 (display-only) */
+  pointKeywords?: string[]
+}) {
   switch (section.type) {
     case 'hero':
       return (
@@ -462,6 +477,8 @@ function SectionBody({ section, onUpdate }: { section: DetailSection; onUpdate: 
               showEditIcon={false}
             />
           </div>
+          {/* 포인트 키워드 chip — 소재·핏·시즌·스타일 (display-only) */}
+          <PointKeywords keywords={pointKeywords} className="mt-3" />
           {/* 이미지 영역 — AI 피팅 이미지 또는 썸네일 */}
           <div className="mt-4">
             {section.image ? (

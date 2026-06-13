@@ -10,6 +10,7 @@ import { ThumbnailGrid, type ThumbnailItem } from '@/components/thumbnail-grid'
 import { EditableText } from '@/components/editable-text'
 import { RegenerateMenu } from '@/components/regenerate-menu'
 import { VariantsTray } from '@/components/variants-tray'
+import { PointKeywords } from '@/components/point-keywords'
 import type { GenerationResult, DetailSection, SectionKind } from '@/store/studio'
 
 // buildDefaultSections은 순수 함수 → 동기 import (번들 크기 미미)
@@ -441,6 +442,7 @@ export function ResultCard({
               &ldquo;{result.tagline}&rdquo;
             </p>
           )}
+          <PointKeywords keywords={result.pointKeywords} variant="dark" className="mt-4" />
           <div className="mt-4 flex items-center justify-between">
             <span className="text-[12px] text-[#9e9ea0]">
               {result.tagline.length}자 · 검색 노출 최적화됨
@@ -553,6 +555,7 @@ export function ResultCard({
                 description: result.description,
                 keywords: result.keywords ?? [],
                 features: result.features ?? [],
+                pointKeywords: result.pointKeywords ?? [],
                 thumbnailUrl: heroImage,
               }
               return (
