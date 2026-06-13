@@ -61,6 +61,35 @@
 - AI 피팅 이미지 크롭 이슈 수정: `object-cover` → `object-contain`
 - hero 섹션 순서: 상품명 → 한줄카피 → 이미지(미설정 시 220px 플레이스홀더)
 
+### 추가 세션 (2026-06-13, 서브에이전트 오케스트레이션) — 4 워크스트림 동시 진행
+
+> 파일 소유권 분리(겹침 0) + recon→구현 파이프라인 병렬 실행. 통합 후 `tsc 0 / eslint 0 / next build 성공` 검증 완료. **미커밋 상태이면 커밋 시 footer 갱신.**
+
+**① 포인트 키워드 UI 렌더링 — 완료 (미해결 #1 해소)**
+- 신규 재사용 컴포넌트 `src/components/point-keywords/index.tsx` — `light`/`dark` variant, 빈 값 시 `null`(layout shift 없음), `ul`/`li`+`aria-label` 접근성, 기존 chip 토큰 재사용
+- `result-card/index.tsx`: 한줄카피 하단 dark chips + editor defaults 로 `pointKeywords` 전달
+- `detail-page-editor/index.tsx`: hero 본문(한줄카피 아래) light chips. **display-only, 스키마 변경 없음**
+- ⚠️ 남은 follow-up: 히스토리에서 프로젝트 복원 시 `pointKeywords` 미복원(studio `loadProject`/store restore 경로는 studio 소유) → 복원 프로젝트는 chip 미표시. DB 영속화 여부와 함께 추후 결정
+
+**② AI Fitting E2E — 정적 검증 + 산출물 (앱 소스 무수정)**
+- `docs/E2E_AI_FITTING.md` — 전체 코드패스 트레이스 + 체크포인트 18건 판정표(file:line) + 1/2/3/4장=2/4/5/6 크레딧 교차검증 + 번호 매긴 수동 브라우저 체크리스트 + risks 7건. **실버그 0건**(보안·동적가격·Pro게이트·원자차감·URL전용전송·모달 매핑 모두 정상)
+- `e2e/ai-fitting.spec.ts` — Playwright 스캐폴드(내비/라벨/모달 검증, 업로드+라이브는 `test.skip`). 의도적으로 러너 글롭 밖(`tests/e2e/` 아님) — 비실행 스캐폴드
+- 관찰(앱 소스 미수정, flag only): R-1 `route.ts` maxDuration 실제 **120**(brief의 90과 불일치, 타이밍 주석으로 정당) · R-2 `runtime='nodejs'` 명시 export 없음(주석만) · R-3 AI Fitting 차감은 `record_ai_fitting_generation`(011, GREATEST clamp)이라 경합 시 과소청구 가능(이중청구 아님)
+
+**③ fitting 결과 history 통합 — 완료 (미해결 #4 해소)**
+- `history/page.tsx`: `ai_fittings` 병렬 쿼리(`Promise.all`, 동일 `cutoffIso` 날짜필터 + `limit(50)`, projects embed) — 기존 성능 최적화 보존, 추가 지연 없음. **인증 `createClient`(RLS) 사용** (admin 금지)
+- 신규 `src/lib/history-items.ts`: `FittingHistoryItem` 타입 + `mapFittingRows`(embed 객체/배열/null 방어, 손상 행 제외)
+- `history-client.tsx`: 'AI 피팅' 탭 추가 + '전체' 뷰 `created_at` desc 병합(판별 유니온). 피팅 카드는 `result_url` 새 탭(스튜디오 미복원), 삭제 UI 미노출(읽기 전용)
+- 검증: `ai_fittings`에 `width/height/aspect_ratio` 실재(009), read RLS(`project_id→projects.user_id`) 확인 — 조용한 빈 결과 버그 없음
+
+**④ 운영 강화 — 안전·가산적 범위 (신규 파일 위주)**
+- 신규 `src/lib/api-balance.ts`: `classifyProviderError`(순수)·`reportProviderFailure`(구조화 console.warn)·`getApiHealth`(env 키 설정 + 인메모리 last incident). 기존 라우트 미연결(채택 시 4곳 중복 분류 제거 가능)
+- 신규 `src/lib/storage-signed-url.ts`: `createAiFittingSignedUrl`/`toStoragePath` — **opt-in, 미호출, 버킷 private 전환 안 함**(공유/히스토리/OG 보호)
+- 신규 `src/lib/analytics.ts`: `logEvent`(best-effort, never-throw, dynamic import로 Edge 경량). `usage_events` 런타임 컬럼 사용. **호출 사이트 wiring은 미적용(follow-up)**
+- 신규 `docs/SIGNED_URL_MIGRATION.md` — 단계적 전환 레시피
+- `admin/page.tsx`: 읽기 전용 'API 상태' 섹션(Anthropic/Google 키 green/red + 최근 장애), "실시간 잔액 아님" 명시
+- 오너 결정 필요: 외부 알림 채널(Slack/CoolSMS/email) 연결 · 라우트 분류 로직 일원화 · `api_incidents`/`analytics_events` 영속 테이블 · `logEvent` wiring 지점 · maxDuration 90↔120 · signed URL 실제 전환 시점
+
 ---
 
 ## 3. 핵심 코드 위치
@@ -136,13 +165,13 @@ docs/
 
 ## 6. 알려진 미해결/관찰 사항 (= 다음 작업 후보)
 
-1. **★ 포인트 키워드 UI 렌더링 미구현** — `pointKeywords`가 `store.result`까지 저장되지만 화면에 태그로 표시되지 않음. `result-card/index.tsx`(또는 detail-page-editor hero 하단)에 태그 칩 UI 추가 필요. *데이터는 이미 흐르므로 표시 컴포넌트만 만들면 됨.*
+1. ~~**★ 포인트 키워드 UI 렌더링 미구현**~~ → **✅ 해소(2026-06-13)**: `PointKeywords` 컴포넌트로 result-card·detail-page-editor hero에 chip 렌더. 남은 follow-up은 **히스토리 복원 시 chip 미표시**(studio `loadProject` 미복원 + DB 영속화 여부 미정) — studio 소유 경로라 별도 작업.
 
 2. **Vercel CLI 토큰 만료** — 이번 세션에서 `vercel` CLI 토큰 만료 확인됨(`whoami` 실패). 배포는 **git push 자동 배포로 정상 동작**하지만, CLI 직접 배포/로그 조회가 필요하면 `vercel login` 재인증 필요. (Vercel MCP는 일부 도구 사용 가능)
 
 3. **AI Fitting 실 사용자 E2E 테스트 미완료** — 브라우저 자동화 file picker 한계로 실제 모델 사진 업로드 검증이 안 됨. 수동 테스트 필요.
 
-4. **fitting 결과 history 통합** — `ai_fittings`는 별도 테이블로만 존재. 히스토리 페이지에 fitting 결과를 함께 노출할지 결정 필요.
+4. ~~**fitting 결과 history 통합**~~ → **✅ 해소(2026-06-13)**: 히스토리에 'AI 피팅' 탭 + '전체' 병합 뷰로 노출(읽기 전용, 결과 이미지 새 탭). 남은 결정: 피팅 카드 클릭을 스튜디오 딥링크로 바꿀지(스튜디오 피팅 복원 기능 필요) · per-type limit 50(병합 최대 100, 페이지네이션 없음) 유지 여부.
 
 5. **ai-fittings 버킷 public read** — 향후 signed URL 또는 RLS로 좁힐지 검토.
 
@@ -176,5 +205,6 @@ git add -A && git commit && git push  # → Vercel 자동 배포 (CLI 불필요)
 
 ---
 
-마지막 커밋: `2905b04 perf: 사이트 속도 최적화 — 이미지·쿼리·렌더링 4개 항목`
-마지막 적용 마이그레이션: `012_security_hardening.sql` (✅ 콘솔 적용 완료)
+마지막 커밋(이전): `76e6a71 docs: 세션 핸드오프 문서 최신화`
+이번 세션 작업: **4 워크스트림(①포인트키워드 UI · ②E2E 산출물 · ③fitting history 통합 · ④운영강화)** — `tsc 0 / eslint 0 / next build 성공`. 커밋 시 이 줄을 새 해시로 갱신.
+마지막 적용 마이그레이션: `012_security_hardening.sql` (✅ 콘솔 적용 완료) — **이번 세션은 새 마이그레이션 없음**(④는 신규 테이블 없이 가산적 구현)
